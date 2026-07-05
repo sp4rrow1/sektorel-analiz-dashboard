@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
+.claude/
+kimteks_unpacked/
+iso_source/
+tuik_kimteks_excel.py
+tuik_nace14_excel.py
+test_llm.py
+*.docx
+_charts_preview/
