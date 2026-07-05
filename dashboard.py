@@ -3,7 +3,7 @@
 TÜİK + TCMB Sektörel Analiz Dashboard
 Kullanim: streamlit run dashboard.py
 """
-import os, sys, pickle, re
+import os, sys, pickle, re, html as _html
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.io as pio
@@ -321,8 +321,13 @@ button[kind="header"], [data-testid="stSidebarCollapsedControl"],
 }}
 .report .r-head:first-child {{ margin-top:0; }}
 .report ul {{ margin:.2rem 0 .4rem 0; padding-left:1.15rem; }}
-.report li {{ margin-bottom:.3rem; }}
+.report li {{ margin-bottom:.4rem; padding-left:.15rem; }}
 .report li::marker {{ color:var(--brand); }}
+.report .r-intro {{
+  font-size:.92rem; line-height:1.8; color:var(--ink-soft);
+  background:rgba(37,99,235,.035); border-left:3px solid var(--brand);
+  padding:.7rem .95rem; border-radius:0 8px 8px 0; margin-bottom:.4rem;
+}}
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 [data-testid="stSidebar"] {{
@@ -1986,21 +1991,35 @@ sec_title(f"Otomatik Rapor", f"{sector_tr} · yapay zekâ destekli sektörel de�
 
 cb, co = st.columns([1, 3])
 with co:
-    _ = st.radio("stil", ["Kısa Özet", "Detaylı Analiz"], horizontal=True,
-                 label_visibility="collapsed")
+    rapor_stili = st.radio("stil", ["Detaylı Analiz", "Kısa Özet"], horizontal=True,
+                           label_visibility="collapsed", key="rapor_stili")
 with cb:
     uret = st.button("✨ Rapor Üret", use_container_width=True)
+
+def _clean_inline(s):
+    """LLM metnini HTML-güvenli hale getir + markdown (**kalın**) dönüştür."""
+    s = s.strip()
+    s = _html.escape(s)                                  # <, >, & kaçışla
+    s = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', s)        # **kalın** → <b>
+    s = s.replace('**', '').replace('*', '')             # artık/tek yıldızları temizle
+    s = re.sub(r'^#{1,6}\s*', '', s)                     # markdown başlık işareti
+    s = re.sub(r'\s{2,}', ' ', s)                        # fazla boşluk
+    return s.strip()
 
 if uret:
     from sector_analysis import generate_analysis
     with st.spinner("Yapay zekâ analizi hazırlanıyor (30–90 sn)…"):
         try:
             analysis = generate_analysis(nace, f1, f2, f3, f4, f5, iso_agg=f8,
-                                         fig6=f6, fig7=f7)
-            st.session_state["rapor_text"] = analysis
-            st.session_state["rapor_nace"] = nace
+                                         fig6=f6, fig7=f7,
+                                         kisa=(st.session_state.get("rapor_stili") == "Kısa Özet"))
+            if not analysis or not analysis.strip():
+                st.error("Analiz boş döndü. Lütfen tekrar 'Rapor Üret' deneyin (ücretsiz LLM anlık yoğun olabilir).")
+            else:
+                st.session_state["rapor_text"] = analysis
+                st.session_state["rapor_nace"] = nace
         except Exception as e:
-            st.error(f"Analiz hatası: {e}")
+            st.error(f"Analiz üretilemedi: {e} — birkaç saniye sonra tekrar deneyin.")
 
 if "rapor_text" in st.session_state and st.session_state.get("rapor_nace") == nace:
     analysis = st.session_state["rapor_text"]
@@ -2013,15 +2032,26 @@ if "rapor_text" in st.session_state and st.session_state.get("rapor_nace") == na
         "SEKIL6": "İSO 500 · Kurumsal Görünüm",
     }
     html = ""
+    any_section = False
     for tag, tl in labels.items():
         text = secs.get(tag, "")
-        if not text: continue
+        if not text or not text.strip(): continue
         if tag == "GIRIS":
-            html += f'<div class="r-head">{tl}</div>{text.replace(chr(10), "<br>")}'
+            paras = [p for p in text.split("\n") if p.strip()]
+            body = "<br>".join(_clean_inline(p) for p in paras)
+            html += f'<div class="r-head">{tl}</div><div class="r-intro">{body}</div>'
         else:
-            items = "".join(f"<li>{b}</li>" for b in bullets_from_text(text))
+            bl = bullets_from_text(text)
+            if not bl: continue
+            items = "".join(f"<li>{_clean_inline(b)}</li>" for b in bl)
             html += f'<div class="r-head">{tl}</div><ul>{items}</ul>'
-    st.markdown(f'<div class="report">{html}</div>', unsafe_allow_html=True)
+        any_section = True
+    if any_section:
+        st.markdown(f'<div class="report">{html}</div>', unsafe_allow_html=True)
+    else:
+        # Etiket parse edilemediyse ham metni yine de temiz göster
+        safe = "<br>".join(_clean_inline(l) for l in analysis.split("\n") if l.strip())
+        st.markdown(f'<div class="report">{safe}</div>', unsafe_allow_html=True)
 
     st.markdown("<div style='height:.8rem'></div>", unsafe_allow_html=True)
     d1, d2, _ = st.columns([1, 1, 3])

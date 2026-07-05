@@ -73,10 +73,12 @@ def get_best_key():
     chosen = pick_best_key(rows)
     return chosen
 
-def call_llm(prompt, system=None, max_tokens=2000, retries=3):
+def call_llm(prompt, system=None, max_tokens=2000, retries=10, validate=None):
     """
     En guncel free key ile LLM'e istek gonder.
-    Basarisiz olursa siradaki key ile tekrar dener.
+    Basarisiz olursa siradaki key ile tekrar dener (402/429 gibi hatalari hizla atlar).
+    validate: opsiyonel fonksiyon (text)->bool; False donerse yanit eksik sayilir,
+              siradaki key denenir (kisa/bozuk cevaplari eler).
     """
     readme = fetch_readme()
     rows   = parse_keys(readme)
@@ -122,13 +124,24 @@ def call_llm(prompt, system=None, max_tokens=2000, retries=3):
             with urllib.request.urlopen(req, timeout=120) as r:
                 resp = json.loads(r.read().decode("utf-8","replace"))
                 text = resp["choices"][0]["message"]["content"]
-                print(f"   [LLM] {row['model']} | budget={row['budget']} | {len(text)} karakter")
-                return text
+                if text and text.strip():
+                    if validate is not None and not validate(text):
+                        print(f"   [LLM] {row['model']} eksik/kisa yanit ({len(text)} kr) -> sonraki key")
+                        last_err = RuntimeError("eksik yanit")
+                        continue
+                    print(f"   [LLM] {row['model']} | budget={row['budget']} | {len(text)} karakter")
+                    return text
+                # bos yanit -> siradaki key
+                last_err = RuntimeError("bos yanit")
+                continue
         except Exception as e:
             last_err = e
             status = getattr(e, 'code', '?')
             print(f"   [LLM] deneme {attempt+1} basarisiz ({row['model']} {status}): {e}")
-            time.sleep(1)
+            # 402/429/401 gibi kota/yetki hatalarinda bekleme yapma, hemen sonrakine gec
+            if status in (402, 429, 401, 403):
+                continue
+            time.sleep(0.7)
 
     raise RuntimeError(f"Tum key'ler basarisiz oldu. Son hata: {last_err}")
 

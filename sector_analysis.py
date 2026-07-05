@@ -116,7 +116,7 @@ def _derived_metrics_text(fig1, fig5, fig6, fig7):
 
 
 def generate_analysis(nace, fig1, fig2, fig3, fig4, fig5, iso_agg=None,
-                      fig6=None, fig7=None):
+                      fig6=None, fig7=None, kisa=False):
     """
     LLM'e yapılandırılmış sorgu gönderir.
     Dönen metin [TAG] bölümlerine ayrılmış olacak:
@@ -127,6 +127,7 @@ def generate_analysis(nace, fig1, fig2, fig3, fig4, fig5, iso_agg=None,
       [SEKIL4] — KKO maddeleri
       [SEKIL5] — UFE maddeleri
     fig6/fig7 verilirse reel ciro & verimlilik türev metrikleri prompt'a eklenir.
+    kisa=True → her bölümde daha az, öz madde (Kısa Özet stili).
     """
     sector = SECTOR_NAMES.get(nace, nace)
     ozet   = summarize_data(nace, fig1, fig2, fig3, fig4, fig5)
@@ -142,6 +143,9 @@ def generate_analysis(nace, fig1, fig2, fig3, fig4, fig5, iso_agg=None,
         except Exception:
             pass
 
+    madde_adet = "1-2 madde" if kisa else "2-3 madde"
+    giris_cumle = "1-2 cümleyle" if kisa else "2-3 cümleyle"
+
     prompt = f"""Aşağıdaki TÜİK ve TCMB verileri kullanılarak {nace} - {sector} sektörü için
 kısa ve veri odaklı bir sektörel araştırma raporu yaz.
 
@@ -151,32 +155,37 @@ kısa ve veri odaklı bir sektörel araştırma raporu yaz.
 Yanıtını SADECE aşağıdaki etiketleri kullanarak yaz (başka hiçbir başlık ya da # işareti koyma):
 
 [GIRIS]
-Sektörün genel durumunu ve son dönem performansını 2-3 cümleyle özetle.
+Sektörün genel durumunu ve son dönem performansını {giris_cumle} özetle.
 Raporun bütününe giriş niteliğinde, veri atıflı paragraf.
 
 [SEKIL1]
-- (üretim endeksi için 2-3 madde, somut % değerleriyle)
+- (üretim endeksi için {madde_adet}, somut % değerleriyle)
 
 [SEKIL2]
-- (alt kırılımlar için 2-3 madde)
+- (alt kırılımlar için {madde_adet})
 
 [SEKIL3]
-- (ihracat ve ithalat için 2-3 madde, dolar değerleri varsa belirt)
+- (ihracat ve ithalat için {madde_adet}, dolar değerleri varsa belirt)
 
 [SEKIL4]
-- (KKO için 2-3 madde, imalat ortalamasıyla karşılaştır)
+- (KKO için {madde_adet}, imalat ortalamasıyla karşılaştır)
 
 [SEKIL5]
-- (ÜFE için 2-3 madde, maliyet baskısını yorumla; varsa REEL CİRO türev metriğine
+- (ÜFE için {madde_adet}, maliyet baskısını yorumla; varsa REEL CİRO türev metriğine
   atıf yap — nominal büyümenin enflasyondan arındırılmış gerçek anlamını vurgula)
-{'''
+{f'''
 [SEKIL6]
-- (İSO 500/İkinci 500 verileri için 2-3 madde: firma sayısı, satış-ihracat büyüklüğü,
+- (İSO 500/İkinci 500 verileri için {madde_adet}: firma sayısı, satış-ihracat büyüklüğü,
   kârlılık ve yoğunlaşma; kurumsal yatırımcı bakışıyla yorumla)
 ''' if iso_agg else ''}
-Tüm maddeler tek satır olsun, resmi Türkçe kullan, sayısal değerler zorunlu."""
+Her madde TEK SATIR olsun, '-' ile başlasın. Markdown yıldızı (**) KULLANMA.
+Resmi Türkçe kullan, sayısal değerler zorunlu. Sadece istenen etiketleri döndür."""
 
-    return call_llm(prompt, system=SYSTEM_PROMPT, max_tokens=2000)
+    # Yanit en az GIRIS + birkaç bölüm içermeli; kısa/eksik cevaplar elenip sonraki key denenir
+    def _valid(t):
+        return len(t) >= 350 and t.count('[') >= 3
+    return call_llm(prompt, system=SYSTEM_PROMPT,
+                    max_tokens=(1200 if kisa else 2000), validate=_valid)
 
 
 # ─── EXCEL 'Analiz' sayfasi (eski uyumluluk icin tutuluyor) ──────────────────
