@@ -501,9 +501,11 @@ pio.templates["tuik"] = go.layout.Template(
         xaxis=dict(showgrid=False, showline=True, linecolor=LINE, linewidth=1,
                    ticks="outside", tickcolor=LINE, ticklen=4,
                    tickfont=dict(size=10.5, color=MUTED)),
+        # hoverformat: unified hover'da %{y} her zaman 1 ondalıkla gösterilir
+        # (ham "-2.514302288475" gibi uzun değerleri engeller)
         yaxis=dict(showgrid=True, gridcolor="#EDF1F6", griddash="dot",
                    zeroline=True, zerolinecolor="#CBD5E1", zerolinewidth=1.2,
-                   tickfont=dict(size=10.5, color=MUTED)),
+                   tickfont=dict(size=10.5, color=MUTED), hoverformat=".1f"),
     )
 )
 LAYOUT   = dict(template="tuik")
@@ -1846,18 +1848,21 @@ with tabs[10]:
     with b1:
         chart_head("İşgücü Verimliliği", "Üretim ve istihdam YoY · makas = verimlilik (yaklaşık)")
         if _prod_ser and _emp_ser and _verim:
+            # Üç seriyi ortak döneme hizala → unified hover düzgün çalışsın
+            _common = sorted(set(_prod_ser) & set(_emp_ser))[-ay_sayisi:]
+            _cx = [tr_month(p) for p in _common]
             fig = go.Figure()
-            xs_p, ys_p = series_xy(_prod_ser, ay_sayisi)
-            fig.add_trace(go.Scatter(x=xs_p, y=ys_p, mode="lines", name="Üretim",
+            fig.add_trace(go.Scatter(x=_cx, y=[_prod_ser[p] for p in _common],
+                mode="lines", name="Üretim",
                 line=dict(color=BRAND, width=2, shape="spline", smoothing=.8),
                 hovertemplate="<b>%{y:+.1f}%</b><extra>Üretim</extra>"))
-            xs_e, ys_e = series_xy(_emp_ser, ay_sayisi)
-            fig.add_trace(go.Scatter(x=xs_e, y=ys_e, mode="lines", name="İstihdam",
+            fig.add_trace(go.Scatter(x=_cx, y=[_emp_ser[p] for p in _common],
+                mode="lines", name="İstihdam",
                 line=dict(color=TEAL, width=2, shape="spline", smoothing=.8),
                 hovertemplate="<b>%{y:+.1f}%</b><extra>İstihdam</extra>"))
-            xs_v, ys_v = series_xy(_verim, ay_sayisi)
-            fig.add_trace(go.Bar(x=xs_v, y=ys_v, name="Verimlilik (makas)",
-                marker_color=["rgba(5,150,105,.35)" if v >= 0 else "rgba(220,38,38,.35)" for v in ys_v],
+            _yv = [_verim.get(p, 0) for p in _common]
+            fig.add_trace(go.Bar(x=_cx, y=_yv, name="Verimlilik (makas)",
+                marker_color=["rgba(5,150,105,.35)" if v >= 0 else "rgba(220,38,38,.35)" for v in _yv],
                 marker_line_width=0,
                 hovertemplate="<b>%{y:+.1f} puan</b><extra>Verimlilik</extra>"))
             fig.update_layout(**LAYOUT, height=340)
