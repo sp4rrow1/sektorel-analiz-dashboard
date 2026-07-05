@@ -22,7 +22,7 @@ PREFERRED_MODELS = [
 
 _cache_readme   = None
 _cache_time     = 0
-CACHE_TTL       = 120  # 2 dakika cache — key'ler sik degisiyor
+CACHE_TTL       = 45   # 45 sn cache — taze key drop'larini hizli yakala
 
 def fetch_readme():
     global _cache_readme, _cache_time
@@ -73,13 +73,18 @@ def get_best_key():
     chosen = pick_best_key(rows)
     return chosen
 
-def call_llm(prompt, system=None, max_tokens=2000, retries=10, validate=None):
+def call_llm(prompt, system=None, max_tokens=2000, retries=0, validate=None,
+             time_budget=60, req_timeout=45):
     """
     En guncel free key ile LLM'e istek gonder.
-    Basarisiz olursa siradaki key ile tekrar dener (402/429 gibi hatalari hizla atlar).
-    validate: opsiyonel fonksiyon (text)->bool; False donerse yanit eksik sayilir,
-              siradaki key denenir (kisa/bozuk cevaplari eler).
+    retries=0  -> tum key'leri sirayla dene (calisani bulana kadar).
+    time_budget-> toplam bu kadar saniye icinde calisan bulunamazsa vazgec
+                  (cagiran deterministik fallback'e gecebilsin diye).
+    req_timeout-> tek istek icin azami bekleme (takilan key'ler hizli elensin).
+    402/429/401 gibi hatalari beklemeden atlar; kisa/bozuk cevaplari eler.
     """
+    import time as _t
+    _start = _t.time()
     readme = fetch_readme()
     rows   = parse_keys(readme)
     if not rows:
@@ -113,6 +118,11 @@ def call_llm(prompt, system=None, max_tokens=2000, retries=10, validate=None):
 
     last_err = None
     for attempt, row in enumerate(attempt_queue):
+        # Zaman butcesi asildiysa dur (cagiran fallback'e gecsin)
+        if _t.time() - _start > time_budget:
+            print(f"   [LLM] zaman butcesi ({time_budget}s) asildi -> vazgecildi")
+            last_err = last_err or RuntimeError("zaman butcesi asildi")
+            break
         try:
             body = json.dumps({
                 "model":      row['model'],
@@ -128,7 +138,7 @@ def call_llm(prompt, system=None, max_tokens=2000, retries=10, validate=None):
                     "User-Agent":    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0.0.0 Safari/537.36",
                     "Accept":        "application/json",
                 })
-            with urllib.request.urlopen(req, timeout=120) as r:
+            with urllib.request.urlopen(req, timeout=req_timeout) as r:
                 resp = json.loads(r.read().decode("utf-8","replace"))
                 text = resp["choices"][0]["message"]["content"]
                 if text and text.strip():

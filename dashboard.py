@@ -2012,18 +2012,18 @@ def _clean_inline(s):
 
 if uret:
     from sector_analysis import generate_analysis
-    with st.spinner("Yapay zekâ analizi hazırlanıyor (30–90 sn)…"):
+    with st.spinner("Rapor hazırlanıyor… (yapay zekâ erişilemezse verilerden otomatik yazılır)"):
         try:
             analysis = generate_analysis(nace, f1, f2, f3, f4, f5, iso_agg=f8,
                                          fig6=f6, fig7=f7,
                                          kisa=(st.session_state.get("rapor_stili") == "Kısa Özet"))
             if not analysis or not analysis.strip():
-                st.error("Analiz boş döndü. Lütfen tekrar 'Rapor Üret' deneyin (ücretsiz LLM anlık yoğun olabilir).")
+                st.error("Rapor üretilemedi. Lütfen tekrar deneyin.")
             else:
                 st.session_state["rapor_text"] = analysis
                 st.session_state["rapor_nace"] = nace
         except Exception as e:
-            st.error(f"Analiz üretilemedi: {e} — birkaç saniye sonra tekrar deneyin.")
+            st.error(f"Rapor üretilemedi: {e}")
 
 if "rapor_text" in st.session_state and st.session_state.get("rapor_nace") == nace:
     analysis = st.session_state["rapor_text"]
