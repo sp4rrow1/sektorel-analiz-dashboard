@@ -531,6 +531,53 @@ def chart_head(title, sub=None):
 def source(text):
     st.markdown(f'<div class="src">{text}</div>', unsafe_allow_html=True)
 
+# ─── ANALİST TÜREVLERİ (reel, verimlilik, momentum) ──────────────────────────────
+def first_serie_sorted(fig_dict):
+    """İlk serinin {period: value} sözlüğünü döner (None temizlenmez)."""
+    if not fig_dict: return {}
+    return dict(sorted(next(iter(fig_dict.values())).items()))
+
+def merged_avg_series(fig_dict):
+    """Çok serili bir fig'in dönem-bazında ortalama serisini döner."""
+    merged = {}
+    for _, s in (fig_dict or {}).items():
+        for p, v in s.items():
+            if v is not None: merged.setdefault(p, []).append(v)
+    return {p: sum(vs)/len(vs) for p, vs in merged.items()}
+
+def real_growth(nom_series, defl_series):
+    """Nominal YoY %'yi ÜFE YoY % ile deflate eder: (1+n)/(1+d)-1. Ortak dönemler."""
+    out = {}
+    for p, n in nom_series.items():
+        d = defl_series.get(p)
+        if n is None or d is None: continue
+        try:
+            out[p] = ((1 + n/100.0) / (1 + d/100.0) - 1) * 100.0
+        except ZeroDivisionError:
+            continue
+    return out
+
+def diff_series(a, b):
+    """İki YoY serisinin farkı (yaklaşık verimlilik / makas): a - b, ortak dönem."""
+    return {p: a[p] - b[p] for p in a if p in b and a[p] is not None and b[p] is not None}
+
+def momentum(series, win=3):
+    """Son `win` ay ort. ile önceki `win` ay ort. farkı → ivme (puan)."""
+    pts = [v for _, v in sorted(series.items()) if v is not None]
+    if len(pts) < 2 * win: return None
+    return sum(pts[-win:]) / win - sum(pts[-2*win:-win]) / win
+
+def vol_std(series, n=24):
+    """Son n ayın standart sapması (oynaklık göstergesi)."""
+    pts = [v for _, v in sorted(series.items())[-n:] if v is not None]
+    if len(pts) < 4: return None
+    m = sum(pts) / len(pts)
+    return (sum((x - m) ** 2 for x in pts) / (len(pts) - 1)) ** 0.5
+
+def last_value(series):
+    pts = [(p, v) for p, v in sorted(series.items()) if v is not None]
+    return pts[-1] if pts else (None, None)
+
 # ════════════════════════════════════════════════════════════════════════════════
 #  SIDEBAR
 # ════════════════════════════════════════════════════════════════════════════════
@@ -718,6 +765,42 @@ kpi_card(cols[5], "ÜFE", fmt_val(ufe_val), f"Yıllık · {tr_per(ufe_per)}",
          badge=fmt_val(ufe_val) if ufe_val is not None else None, icon="💰",
          spark=spark_svg(first_series(f5), _tone_color("neg" if (ufe_val or 0) > 20 else "pos")))
 
+# ── TÜREV (ANALİST) GÖSTERGELERİ ────────────────────────────────────────────────
+# Reel ciro = nominal ciro YoY, ÜFE ile deflate edilmiş
+_prod_ser  = merged_avg_series(f1)                    # üretim YoY (alt grup ort.)
+_ciro_ser  = first_serie_sorted(f6)                   # nominal ciro YoY
+_ufe_ser   = first_serie_sorted(f5)                   # sektör ÜFE YoY
+_emp_ser   = first_serie_sorted(f7)                   # istihdam YoY
+_reel_ciro = real_growth(_ciro_ser, _ufe_ser)         # reel ciro YoY
+_verim     = diff_series(_prod_ser, _emp_ser)         # verimlilik ~ üretim - istihdam
+_ih_ser    = first_series(ih_series) or {}
+_it_ser    = first_series(it_series) or {}
+_net_trade = diff_series(_ih_ser, _it_ser)            # dış ticaret makası (ihr - ith)
+
+reel_v, reel_p = last_value(_reel_ciro)
+verim_v, _     = last_value(_verim)
+net_v, _       = last_value(_net_trade)
+prod_mom       = momentum(_prod_ser)
+
+st.markdown("<div style='height:.7rem'></div>", unsafe_allow_html=True)
+dcols = st.columns(4)
+kpi_card(dcols[0], "Reel Ciro", fmt_val(reel_v),
+         f"ÜFE'den arındırılmış · {tr_per(reel_p)}",
+         tone=tone_of(reel_v), badge=fmt_val(reel_v) if reel_v is not None else None,
+         icon="💵", spark=spark_svg(_reel_ciro, _tone_color(tone_of(reel_v))))
+kpi_card(dcols[1], "İşgücü Verimliliği", fmt_val(verim_v),
+         "üretim − istihdam (YoY farkı)",
+         tone=tone_of(verim_v), badge=fmt_val(verim_v) if verim_v is not None else None,
+         icon="⚡", spark=spark_svg(_verim, _tone_color(tone_of(verim_v))))
+kpi_card(dcols[2], "Dış Ticaret Makası", fmt_val(net_v),
+         "ihracat − ithalat (YoY farkı)",
+         tone=tone_of(net_v), badge=fmt_val(net_v) if net_v is not None else None,
+         icon="⚖️", spark=spark_svg(_net_trade, _tone_color(tone_of(net_v))))
+kpi_card(dcols[3], "Üretim Momentumu", fmt_val(prod_mom) if prod_mom is not None else "—",
+         "son 3 ay − önceki 3 ay ivme",
+         tone=tone_of(prod_mom), badge=(fmt_val(prod_mom) if prod_mom is not None else None),
+         icon="🚀", spark=spark_svg(_prod_ser, _tone_color(tone_of(prod_mom))))
+
 st.markdown("<div style='height:1.4rem'></div>", unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -727,7 +810,7 @@ tabs = st.tabs([
     "📌  Genel Bakış",
     "🏭  Üretim", "🔍  Alt Kırılımlar", "🌍  Dış Ticaret",
     "⚙️  Kapasite", "💰  Enflasyon", "📈  Ciro", "👥  İstihdam",
-    "🏆  İSO 500", "📰  Haber & Risk",
+    "🏆  İSO 500", "📰  Haber & Risk", "📐  Analist Görünümü",
 ])
 
 # ── TAB 0: GENEL BAKIŞ ───────────────────────────────────────────────────────────
@@ -1472,6 +1555,228 @@ with tabs[9]:
                         f'formatında risk-fırsat maddelerine dönüştürmek için butona basın.</div>',
                         unsafe_allow_html=True)
 
+# ── TAB 10: ANALİST GÖRÜNÜMÜ ─────────────────────────────────────────────────────
+@st.cache_data(show_spinner=False)
+def cross_sector_panel(cache_key):
+    """24 sektörün son değerlerini türev metriklerle birlikte döner (percentil için)."""
+    rows = {}
+    for k in ALL_MANUFACTURING:
+        try:
+            g1 = build_sekil1(k, cache["alt_c"], ana_c_series=_ana_c)
+            g3 = build_sekil3(k, cache["dis_ticaret"])
+            g4 = build_sekil4(k, cache["kko"])
+            g5 = build_sekil5(k, cache["ufe"])
+            g6 = build_sekil6(k, cache["ciro"])    if "ciro"    in cache else {}
+            g7 = build_sekil7(k, cache["ucretli"]) if "ucretli" in cache else {}
+            prod = merged_avg_series(g1)
+            ciro = first_serie_sorted(g6)
+            ufe  = first_serie_sorted(g5)
+            emp  = first_serie_sorted(g7)
+            ihd  = {p: v for lbl, s in g3.items()
+                    if "hracat" in lbl and "thalat" not in lbl for p, v in s.items()}
+            reel = real_growth(ciro, ufe)
+            verim = diff_series(prod, emp)
+            kko_s = {kk: vv for kk, vv in g4.items() if "anayii" not in kk}
+            rows[k] = {
+                "uretim":    last_value(prod)[1],
+                "reel_ciro": last_value(reel)[1],
+                "ihracat":   last_value(ihd)[1] if ihd else None,
+                "verim":     last_value(verim)[1],
+                "kko":       last_value(first_serie_sorted(kko_s))[1] if kko_s else None,
+            }
+        except Exception:
+            continue
+    return rows
+
+def _pct_rank(values, target):
+    """target'ın values içindeki yüzdelik dilimi (0-100)."""
+    vals = [v for v in values if v is not None]
+    if target is None or len(vals) < 2: return None
+    below = sum(1 for v in vals if v < target)
+    return round(below / (len(vals) - 1) * 100)
+
+with tabs[10]:
+    sec_title("Analist Görünümü",
+              "Reel büyüme, verimlilik, momentum ve karşılaştırmalı konumlanma · türev göstergeler")
+
+    # ── Reel vs Nominal Ciro + Momentum ──
+    a1, a2 = st.columns([3, 2], gap="large")
+    with a1:
+        chart_head("Reel vs Nominal Ciro",
+                   "Nominal ciro ÜFE ile deflate edildi · reel = gerçek büyüme")
+        if _ciro_ser and _reel_ciro:
+            fig = go.Figure()
+            xs_n, ys_n = series_xy(_ciro_ser, ay_sayisi)
+            fig.add_trace(go.Scatter(x=xs_n, y=ys_n, mode="lines", name="Nominal Ciro",
+                line=dict(color="#94A3B8", width=1.8, shape="spline", smoothing=.8),
+                hovertemplate="<b>%{y:+.1f}%</b><extra>Nominal</extra>"))
+            xs_u, ys_u = series_xy(_ufe_ser, ay_sayisi)
+            fig.add_trace(go.Scatter(x=xs_u, y=ys_u, mode="lines", name="ÜFE (maliyet)",
+                line=dict(color=AMBER, width=1.6, dash="dot", shape="spline", smoothing=.8),
+                hovertemplate="<b>%{y:+.1f}%</b><extra>ÜFE</extra>"))
+            xs_r, ys_r = series_xy(_reel_ciro, ay_sayisi)
+            fig.add_trace(go.Scatter(x=xs_r, y=ys_r, mode="lines", name="Reel Ciro",
+                line=dict(color=BRAND, width=2.8, shape="spline", smoothing=.8),
+                fill="tozeroy", fillcolor="rgba(37,99,235,.06)",
+                hovertemplate="<b>%{y:+.1f}%</b><extra>Reel</extra>"))
+            end_label(fig, xs_r, ys_r, BRAND)
+            fig.update_layout(**LAYOUT, height=360)
+            fig.update_xaxes(dtick=6)
+            fig.update_yaxes(ticksuffix="%")
+            fig.add_hline(y=0, line_width=1, line_color="#CBD5E1")
+            st.plotly_chart(fig, use_container_width=True, config=NOBAR)
+            if reel_v is not None:
+                _msg = ("reel daralma — nominal büyüme enflasyonun altında" if reel_v < 0
+                        else "reel büyüme — nominal artış enflasyonu aştı")
+                st.markdown(f'<div class="src">Son dönem reel ciro <b>{reel_v:+.1f}%</b> · {_msg}</div>',
+                            unsafe_allow_html=True)
+        else:
+            st.info("Reel ciro için ciro ve ÜFE verisi gerekli.")
+
+    with a2:
+        chart_head("Momentum Panosu", "Son 3 ay − önceki 3 ay ivme (puan)")
+        mom_items = [
+            ("Üretim",     momentum(_prod_ser)),
+            ("Reel Ciro",  momentum(_reel_ciro)),
+            ("İhracat",    momentum(_ih_ser)),
+            ("İstihdam",   momentum(_emp_ser)),
+            ("Verimlilik", momentum(_verim)),
+        ]
+        mom_items = [(n, v) for n, v in mom_items if v is not None]
+        if mom_items:
+            names = [n for n, _ in mom_items][::-1]
+            mvals = [v for _, v in mom_items][::-1]
+            fig = go.Figure(go.Bar(
+                y=names, x=mvals, orientation="h",
+                marker_color=[POS if v >= 0 else NEG for v in mvals],
+                marker_line_width=0, marker=dict(cornerradius=3),
+                text=[f"{v:+.1f}" for v in mvals], textposition="outside",
+                cliponaxis=False, textfont=dict(size=11, family="Inter"),
+                hovertemplate="%{y}: <b>%{x:+.1f} puan</b><extra></extra>", width=0.6))
+            _mx = max(abs(v) for v in mvals) * 1.5 or 1
+            fig.update_layout(**LAYOUT, height=360, showlegend=False, hovermode="closest",
+                              margin=dict(l=8, r=40, t=8, b=30))
+            fig.update_xaxes(range=[-_mx, _mx], zeroline=True, zerolinecolor="#CBD5E1",
+                             showticklabels=False, showline=False)
+            fig.update_yaxes(showgrid=False, tickfont=dict(size=11, color=INK_SOFT))
+            st.plotly_chart(fig, use_container_width=True, config=NOBAR)
+            st.markdown('<div class="src">Yeşil: ivmelenme (hızlanan büyüme) · '
+                        'Kırmızı: yavaşlama</div>', unsafe_allow_html=True)
+        else:
+            st.info("Momentum için yeterli veri yok.")
+
+    st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
+
+    # ── Verimlilik + Oynaklık ──
+    b1, b2 = st.columns([3, 2], gap="large")
+    with b1:
+        chart_head("İşgücü Verimliliği", "Üretim ve istihdam YoY · makas = verimlilik (yaklaşık)")
+        if _prod_ser and _emp_ser and _verim:
+            fig = go.Figure()
+            xs_p, ys_p = series_xy(_prod_ser, ay_sayisi)
+            fig.add_trace(go.Scatter(x=xs_p, y=ys_p, mode="lines", name="Üretim",
+                line=dict(color=BRAND, width=2, shape="spline", smoothing=.8),
+                hovertemplate="<b>%{y:+.1f}%</b><extra>Üretim</extra>"))
+            xs_e, ys_e = series_xy(_emp_ser, ay_sayisi)
+            fig.add_trace(go.Scatter(x=xs_e, y=ys_e, mode="lines", name="İstihdam",
+                line=dict(color=TEAL, width=2, shape="spline", smoothing=.8),
+                hovertemplate="<b>%{y:+.1f}%</b><extra>İstihdam</extra>"))
+            xs_v, ys_v = series_xy(_verim, ay_sayisi)
+            fig.add_trace(go.Bar(x=xs_v, y=ys_v, name="Verimlilik (makas)",
+                marker_color=["rgba(5,150,105,.35)" if v >= 0 else "rgba(220,38,38,.35)" for v in ys_v],
+                marker_line_width=0,
+                hovertemplate="<b>%{y:+.1f} puan</b><extra>Verimlilik</extra>"))
+            fig.update_layout(**LAYOUT, height=340)
+            fig.update_xaxes(dtick=6)
+            fig.update_yaxes(ticksuffix="%")
+            fig.add_hline(y=0, line_width=1, line_color="#CBD5E1")
+            st.plotly_chart(fig, use_container_width=True, config=NOBAR)
+            st.markdown('<div class="src">Üretim istihdamdan hızlı artıyorsa verimlilik '
+                        'yükselir (pozitif makas). Kaynak: TÜİK üretim + ücretli çalışan endeksleri</div>',
+                        unsafe_allow_html=True)
+        else:
+            st.info("Verimlilik için üretim ve istihdam verisi gerekli.")
+
+    with b2:
+        chart_head("Oynaklık / Risk Profili", "Son 24 ayın standart sapması (düşük = istikrarlı)")
+        vol_items = [
+            ("Üretim",   vol_std(_prod_ser)),
+            ("Ciro",     vol_std(_ciro_ser)),
+            ("İhracat",  vol_std(_ih_ser)),
+            ("İstihdam", vol_std(_emp_ser)),
+            ("ÜFE",      vol_std(_ufe_ser)),
+        ]
+        vol_items = [(n, v) for n, v in vol_items if v is not None]
+        if vol_items:
+            names = [n for n, _ in vol_items][::-1]
+            vvals = [v for _, v in vol_items][::-1]
+            fig = go.Figure(go.Bar(
+                y=names, x=vvals, orientation="h",
+                marker_color=AMBER, marker_line_width=0, marker=dict(cornerradius=3),
+                text=[f"{v:.1f}" for v in vvals], textposition="outside",
+                cliponaxis=False, textfont=dict(size=11, family="Inter"),
+                hovertemplate="%{y}: <b>σ = %{x:.1f}</b><extra></extra>", width=0.58))
+            fig.update_layout(**LAYOUT, height=340, showlegend=False, hovermode="closest",
+                              margin=dict(l=8, r=36, t=8, b=30))
+            fig.update_xaxes(showticklabels=False, showline=False,
+                             range=[0, max(vvals) * 1.35 or 1])
+            fig.update_yaxes(showgrid=False, tickfont=dict(size=11, color=INK_SOFT))
+            st.plotly_chart(fig, use_container_width=True, config=NOBAR)
+            st.markdown('<div class="src">Yüksek σ = öngörülemez talep/fiyat · '
+                        'planlama ve nakit akışı riski</div>', unsafe_allow_html=True)
+        else:
+            st.info("Oynaklık için yeterli veri yok.")
+
+    st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
+
+    # ── Sektör Konumlanması (24 sektör içinde percentil) ──
+    if nace != TOTAL_MANUFACTURING:
+        sec_title("Sektör Konumlanması",
+                  f"{nace} · 24 imalat sektörü içindeki yüzdelik dilim (100 = en iyi)")
+        panel = cross_sector_panel(cache_date)
+        if panel and nace in panel:
+            metrics = [
+                ("Üretim büyümesi",  "uretim",    False),
+                ("Reel ciro",        "reel_ciro", False),
+                ("İhracat büyümesi", "ihracat",   False),
+                ("Verimlilik",       "verim",     False),
+                ("Kapasite (KKO)",   "kko",       False),
+            ]
+            rows_pct, cur = [], panel[nace]
+            for label, key, inv in metrics:
+                allv = [panel[k].get(key) for k in panel]
+                pr = _pct_rank(allv, cur.get(key))
+                if pr is not None:
+                    rows_pct.append((label, pr, cur.get(key)))
+            if rows_pct:
+                names = [r[0] for r in rows_pct][::-1]
+                prs   = [r[1] for r in rows_pct][::-1]
+                raws  = [r[2] for r in rows_pct][::-1]
+                bcol  = [POS if p >= 66 else AMBER if p >= 33 else NEG for p in prs]
+                fig = go.Figure(go.Bar(
+                    y=names, x=prs, orientation="h",
+                    marker_color=bcol, marker_line_width=0, marker=dict(cornerradius=3),
+                    text=[f"%{p} dilim · {rv:+.1f}%" if rv is not None else f"%{p}"
+                          for p, rv in zip(prs, raws)],
+                    textposition="outside", cliponaxis=False,
+                    textfont=dict(size=10.5, family="Inter"),
+                    hovertemplate="%{y}: <b>%{x}. yüzdelik</b><extra></extra>", width=0.6))
+                fig.update_layout(**LAYOUT, height=270, showlegend=False, hovermode="closest",
+                                  margin=dict(l=8, r=90, t=8, b=24))
+                fig.update_xaxes(range=[0, 118], showticklabels=False, showline=False)
+                fig.update_yaxes(showgrid=False, tickfont=dict(size=11, color=INK_SOFT))
+                fig.add_vline(x=50, line_width=1, line_dash="dot", line_color="#CBD5E1")
+                st.plotly_chart(fig, use_container_width=True, config=NOBAR)
+                st.markdown('<div class="src">Yeşil: ilk üçte bir · Sarı: orta · Kırmızı: son üçte bir · '
+                            'Kesik çizgi = medyan (50). Karşılaştırma: 24 imalat alt sektörü, son dönem</div>',
+                            unsafe_allow_html=True)
+        else:
+            st.info("Konumlanma hesaplanamadı.")
+    else:
+        st.markdown('<div class="src">Konumlanma yüzdelikleri tekil sektörler için gösterilir; '
+                    'toplam imalat sanayii seçiliyken bu bölüm devre dışıdır.</div>',
+                    unsafe_allow_html=True)
+
 # ════════════════════════════════════════════════════════════════════════════════
 #  OTOMATİK RAPOR
 # ════════════════════════════════════════════════════════════════════════════════
@@ -1489,7 +1794,8 @@ if uret:
     from sector_analysis import generate_analysis
     with st.spinner("Yapay zekâ analizi hazırlanıyor (30–90 sn)…"):
         try:
-            analysis = generate_analysis(nace, f1, f2, f3, f4, f5, iso_agg=f8)
+            analysis = generate_analysis(nace, f1, f2, f3, f4, f5, iso_agg=f8,
+                                         fig6=f6, fig7=f7)
             st.session_state["rapor_text"] = analysis
             st.session_state["rapor_nace"] = nace
         except Exception as e:

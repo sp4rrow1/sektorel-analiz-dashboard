@@ -82,7 +82,41 @@ somut sayısal değerlere atıf yaparsın (örn. "%5,8 azalış", "12,9 milyar d
 yerine madde işaretli (-) satırlarla yazarsın."""
 
 
-def generate_analysis(nace, fig1, fig2, fig3, fig4, fig5, iso_agg=None):
+def _derived_metrics_text(fig1, fig5, fig6, fig7):
+    """Reel ciro, verimlilik, momentum gibi türev analist metriklerini metne döker."""
+    def first_ser(fd):
+        if not fd: return {}
+        return dict(sorted(next(iter(fd.values())).items()))
+    def merged(fd):
+        m = {}
+        for _, s in (fd or {}).items():
+            for p, v in s.items():
+                if v is not None: m.setdefault(p, []).append(v)
+        return {p: sum(vs)/len(vs) for p, vs in m.items()}
+    def last(s):
+        pts = [(p, v) for p, v in sorted(s.items()) if v is not None]
+        return pts[-1] if pts else (None, None)
+
+    prod = merged(fig1); ciro = first_ser(fig6)
+    ufe  = first_ser(fig5); emp = first_ser(fig7)
+    lines = []
+
+    cp, cv = last(ciro); up, uv = last(ufe)
+    if cv is not None and uv is not None:
+        reel = ((1 + cv/100.0) / (1 + uv/100.0) - 1) * 100.0
+        lines.append(f"  Reel ciro (nominal %{cv:.1f} - UFE %{uv:.1f}): %{reel:+.1f} "
+                     f"({'reel daralma' if reel < 0 else 'reel buyume'})")
+    pp, pv = last(prod); ep, ev = last(emp)
+    if pv is not None and ev is not None:
+        lines.append(f"  Isgucu verimliligi (uretim %{pv:.1f} - istihdam %{ev:.1f}): "
+                     f"%{pv - ev:+.1f} puan")
+    if not lines:
+        return ''
+    return "\n=== TUREV ANALIST METRIKLERI ===\n" + "\n".join(lines) + "\n"
+
+
+def generate_analysis(nace, fig1, fig2, fig3, fig4, fig5, iso_agg=None,
+                      fig6=None, fig7=None):
     """
     LLM'e yapılandırılmış sorgu gönderir.
     Dönen metin [TAG] bölümlerine ayrılmış olacak:
@@ -92,9 +126,11 @@ def generate_analysis(nace, fig1, fig2, fig3, fig4, fig5, iso_agg=None):
       [SEKIL3] — dış ticaret maddeleri
       [SEKIL4] — KKO maddeleri
       [SEKIL5] — UFE maddeleri
+    fig6/fig7 verilirse reel ciro & verimlilik türev metrikleri prompt'a eklenir.
     """
     sector = SECTOR_NAMES.get(nace, nace)
     ozet   = summarize_data(nace, fig1, fig2, fig3, fig4, fig5)
+    ozet  += _derived_metrics_text(fig1, fig5, fig6, fig7)
 
     iso_blok = ''
     if iso_agg:
@@ -131,7 +167,8 @@ Raporun bütününe giriş niteliğinde, veri atıflı paragraf.
 - (KKO için 2-3 madde, imalat ortalamasıyla karşılaştır)
 
 [SEKIL5]
-- (ÜFE için 2-3 madde, maliyet baskısını yorumla)
+- (ÜFE için 2-3 madde, maliyet baskısını yorumla; varsa REEL CİRO türev metriğine
+  atıf yap — nominal büyümenin enflasyondan arındırılmış gerçek anlamını vurgula)
 {'''
 [SEKIL6]
 - (İSO 500/İkinci 500 verileri için 2-3 madde: firma sayısı, satış-ihracat büyüklüğü,

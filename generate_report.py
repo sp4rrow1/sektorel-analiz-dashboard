@@ -481,6 +481,10 @@ def generate(nace_code, out_dir=None, with_analysis=True):
     f5 = build_sekil5(nace, cache['ufe'])
     print(f"   {len(f5)} seri")
 
+    # Turev metrikler icin (reel ciro, verimlilik) — LLM raporunda kullanilir
+    f6 = build_sekil6(nace, cache['ciro'])    if 'ciro'    in cache else {}
+    f7 = build_sekil7(nace, cache['ucretli']) if 'ucretli' in cache else {}
+
     # ─── ISO 500 verisi ──────────────────────────────────────────────────────
     iso_agg = None
     try:
@@ -500,7 +504,8 @@ def generate(nace_code, out_dir=None, with_analysis=True):
         print("\n-> LLM analizi uretiliyor...")
         try:
             from sector_analysis import generate_analysis, add_analysis_sheet
-            analysis_text = generate_analysis(nace, f1, f2, f3, f4, f5, iso_agg=iso_agg)
+            analysis_text = generate_analysis(nace, f1, f2, f3, f4, f5, iso_agg=iso_agg,
+                                               fig6=f6, fig7=f7)
             add_analysis_sheet(wb, nace, analysis_text)
             print("   Excel analiz sayfasi eklendi.")
         except Exception as e:
