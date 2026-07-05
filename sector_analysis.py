@@ -7,6 +7,188 @@ import re
 from llm_client import call_llm
 from nace_config import SECTOR_NAMES, SITC_MAP
 
+_TR_AY = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+          'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
+
+def _tr_num(v, dec=1):
+    """1234.5 -> '1.234,5' (Türkçe biçim)."""
+    if v is None:
+        return "—"
+    s = f"{v:,.{dec}f}"
+    return s.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
+
+def _tr_donem(p):
+    try:
+        yr, mo = p.split("-")
+        return f"{_TR_AY[int(mo)-1]} {yr}"
+    except Exception:
+        return p or ""
+
+def _yon(v):
+    return "artış" if (v or 0) >= 0 else "azalış"
+
+def _yon2(v):
+    return "arttığı" if (v or 0) >= 0 else "azaldığı"
+
+def _first_ser(fd):
+    if not fd: return {}
+    return dict(sorted(next(iter(fd.values())).items()))
+
+def _merged(fd):
+    m = {}
+    for _, s in (fd or {}).items():
+        for p, v in s.items():
+            if v is not None: m.setdefault(p, []).append(v)
+    return {p: sum(vs)/len(vs) for p, vs in m.items()}
+
+def _last(s):
+    pts = [(p, v) for p, v in sorted(s.items()) if v is not None]
+    return pts[-1] if pts else (None, None)
+
+def _yil_ort(s, yr):
+    vs = [v for p, v in s.items() if v is not None and p.startswith(str(yr))]
+    return sum(vs)/len(vs) if vs else None
+
+
+def fallback_report(nace, fig1, fig2, fig3, fig4, fig5, iso_agg=None, fig6=None, fig7=None):
+    """
+    LLM erişilemediğinde gerçek verilerden deterministik, banka üslubunda
+    [TAG] bölümlü rapor üretir. Böylece rapor asla boş kalmaz.
+    """
+    sector = SECTOR_NAMES.get(nace, nace)
+    try:
+        from report_charts import nace_name as _nn
+        official = _nn(nace)
+        if official and official != nace:
+            sector = official
+    except Exception:
+        pass
+
+    prod = _merged(fig1)
+    pp, pv = _last(prod)
+    son_yil = int(pp.split("-")[0]) if pp else None
+    prev_yil = (son_yil - 1) if son_yil else None
+    prod_yil = _yil_ort(prod, prev_yil) if prev_yil else None
+
+    out = []
+    out.append("[GIRIS]")
+    out.append(
+        f"Türkiye'de {sector.lower()} sektörü, imalat sanayiinin önemli bir bileşenini "
+        f"oluşturmakta ve ülke ekonomisinde üretim, istihdam ve dış ticaret açısından "
+        f"belirleyici bir rol üstlenmektedir. Sektörün güncel görünümüne ilişkin temel "
+        f"göstergeler ve değerlendirmelerimiz aşağıda yer almaktadır.")
+
+    # ── SEKIL1: Üretim ──
+    out.append("[SEKIL1]")
+    if pv is not None:
+        s = ""
+        if prod_yil is not None:
+            s += (f"{sector} sektörü üretimi {prev_yil} yılında bir önceki yıla göre "
+                  f"%{_tr_num(abs(prod_yil))} oranında {_yon(prod_yil)} kaydetmiştir. ")
+        s += (f"{_tr_donem(pp)} itibarıyla üretimin, geçen yılın aynı ayına göre "
+              f"%{_tr_num(abs(pv))} {_yon2(pv)} gözlemlenmektedir.")
+        out.append(s)
+    else:
+        out.append(f"{sector} sektörüne ilişkin üretim endeksi verisi bu dönem için sınırlıdır.")
+
+    # ── SEKIL2: Alt kırılımlar ──
+    out.append("[SEKIL2]")
+    if fig2:
+        lasts = {}
+        for code, s in fig2.items():
+            _, v = _last(s)
+            if v is not None: lasts[code] = v
+        if lasts:
+            en_iyi = max(lasts, key=lasts.get)
+            en_kotu = min(lasts, key=lasts.get)
+            def _cn(c):
+                try:
+                    from report_charts import nace_name as _nn
+                    return _nn(c)
+                except Exception:
+                    return c
+            s = (f"Alt sektörler incelendiğinde, son dönemde en yüksek {_yon(lasts[en_iyi])} "
+                 f"%{_tr_num(lasts[en_iyi])} ile \"{_cn(en_iyi)}\" alt sektöründe gerçekleşmiştir.")
+            if en_kotu != en_iyi:
+                s += (f" Buna karşılık, \"{_cn(en_kotu)}\" alt sektöründe %{_tr_num(abs(lasts[en_kotu]))} "
+                      f"oranında {_yon(lasts[en_kotu])} kaydedilmiştir.")
+            out.append(s)
+        else:
+            out.append("Alt sektör kırılımlarına ilişkin veri bu dönem için sınırlıdır.")
+    else:
+        out.append("Alt sektör kırılımlarına ilişkin veri bu dönem için mevcut değildir.")
+
+    # ── SEKIL3: Dış ticaret ──
+    out.append("[SEKIL3]")
+    ih = {k: v for k, v in (fig3 or {}).items() if "hracat" in k and "thalat" not in k}
+    it = {k: v for k, v in (fig3 or {}).items() if "thalat" in k}
+    ihp, ihv = _last(_first_ser(ih)); itp, itv = _last(_first_ser(it))
+    if ihv is not None or itv is not None:
+        don = _tr_donem(ihp or itp)
+        parts = []
+        if ihv is not None:
+            parts.append(f"ihracatın %{_tr_num(abs(ihv))} oranında {_yon2(ihv)}")
+        if itv is not None:
+            parts.append(f"ithalatın ise %{_tr_num(abs(itv))} oranında {_yon2(itv)}")
+        out.append(f"{don} döneminde, önceki yılın aynı dönemine göre {', '.join(parts)} görülmektedir.")
+    else:
+        out.append(f"{sector} sektörüne ilişkin dış ticaret verisi bu dönem için sınırlıdır.")
+
+    # ── SEKIL4: KKO ──
+    out.append("[SEKIL4]")
+    kko_sec = {k: v for k, v in (fig4 or {}).items() if "anayii" not in k}
+    kko_im  = {k: v for k, v in (fig4 or {}).items() if "anayii" in k}
+    ksp, ksv = _last(_first_ser({k: (dict(v) if not isinstance(v, dict) else v) for k, v in kko_sec.items()}))
+    kip, kiv = _last(_first_ser({k: (dict(v) if not isinstance(v, dict) else v) for k, v in kko_im.items()}))
+    if ksv is not None:
+        s = (f"{_tr_donem(ksp)} itibarıyla kapasite kullanım oranı, {sector} sektöründe "
+             f"%{_tr_num(ksv)} düzeyinde gerçekleşmiştir.")
+        if kiv is not None:
+            fark = ksv - kiv
+            s += (f" Aynı dönemde imalat sanayii genelinde %{_tr_num(kiv)} olarak ölçülen oran, "
+                  f"sektörün imalat ortalamasının {_tr_num(abs(fark))} puan "
+                  f"{'üzerinde' if fark >= 0 else 'altında'} seyrettiğine işaret etmektedir.")
+        out.append(s)
+    else:
+        out.append("Kapasite kullanım oranına ilişkin veri bu dönem için sınırlıdır.")
+
+    # ── SEKIL5: ÜFE + reel ciro ──
+    out.append("[SEKIL5]")
+    ufe = _first_ser(fig5)
+    ufe_im = {k: v for k, v in (fig5 or {}).items() if " c " in (" " + k.lower() + " ")}
+    usp, usv = _last(ufe); uip, uiv = _last(_first_ser(ufe_im))
+    if usv is not None:
+        s = (f"{sector} sektörü üretici fiyatları, {_tr_donem(usp)} itibarıyla yıllık "
+             f"%{_tr_num(usv)} düzeyinde değişim göstermiştir.")
+        if uiv is not None:
+            s += (f" Aynı dönemde imalat sanayii ÜFE değişimi %{_tr_num(uiv)} olup, sektör fiyatları "
+                  f"imalat geneli ile {'paralel' if abs(usv-uiv) < 5 else 'kısmen ayrışan'} bir seyir izlemektedir.")
+        # reel ciro
+        ciro = _first_ser(fig6); cp, cv = _last(ciro)
+        if cv is not None and usv is not None:
+            reel = ((1 + cv/100.0) / (1 + usv/100.0) - 1) * 100.0
+            s += (f" Nominal ciro değişiminin (%{_tr_num(cv)}) enflasyondan arındırılmış reel "
+                  f"karşılığı %{_tr_num(reel)} olarak hesaplanmakta; bu durum sektörde reel "
+                  f"{'büyümeye' if reel >= 0 else 'daralmaya'} işaret etmektedir.")
+        out.append(s)
+    else:
+        out.append("Üretici fiyat endeksine ilişkin veri bu dönem için sınırlıdır.")
+
+    # ── SEKIL6: İSO ──
+    if iso_agg:
+        out.append("[SEKIL6]")
+        yil = iso_agg.get('yil', '')
+        s = (f"Türkiye'nin en büyük sanayi kuruluşlarını kapsayan İSO 500 ve İkinci 500 "
+             f"listelerinde {sector} sektöründen {yil} yılında {iso_agg['firma_sayisi']} kuruluş "
+             f"yer almıştır. Bu kuruluşların toplam üretimden satışları "
+             f"{_tr_num(iso_agg['toplam_uretim_satis']/1e9)} milyar TL, toplam ihracatı ise "
+             f"{_tr_num(iso_agg['toplam_ihracat_musd'], 0)} milyon dolar düzeyinde gerçekleşmiştir.")
+        if iso_agg.get('favok_marj_med') is not None:
+            s += f" Sektörün medyan FAVÖK marjı %{_tr_num(iso_agg['favok_marj_med'])} olarak hesaplanmıştır."
+        out.append(s)
+
+    return "\n".join(out)
+
 
 def summarize_data(nace, fig1, fig2, fig3, fig4, fig5):
     """5 sekildeki veriyi LLM icin ozet metin haline getirir."""
@@ -203,15 +385,32 @@ yatırımcı bakışıyla değerlendir.
 ''' if iso_agg else ''}
 Sadece istenen etiketleri döndür. Madde işareti ve markdown yıldızı (**) yasak."""
 
-    # Yanit yeterli DOLU bölüm içermeli; boş/eksik cevaplar elenip sonraki key denenir
+    # Yanit GERCEK etiket satirlari + dolu Turkce icerik icermeli.
+    # (reasoning modellerin Ingilizce dusunce dokumu / etiketsiz cikti elenir)
     def _valid(t):
         if len(t) < 400:
             return False
-        parts = re.split(r'\[[A-Z0-9]+\]', t)
+        # kendi satirinda [GIRIS]/[SEKILn] etiketleri
+        tags = re.findall(r'^\s*\[(GIRIS|SEKIL\d)\]\s*$', t, re.MULTILINE)
+        if len(set(tags)) < 4:
+            return False
+        # Ingilizce reasoning sizintisi belirtileri
+        low = t[:200].lower()
+        if any(k in low for k in ("we need to", "let me", "okay,", "sure,", "here is", "i will")):
+            return False
+        # etiketlerden sonra dolu icerik say
+        parts = re.split(r'^\s*\[[A-Z0-9]+\]\s*$', t, flags=re.MULTILINE)
         filled = sum(1 for p in parts if len(p.strip()) > 40)
         return filled >= 4
-    return call_llm(prompt, system=SYSTEM_PROMPT,
-                    max_tokens=(1200 if kisa else 2000), validate=_valid)
+    try:
+        # Tum key'ler denensin (retries=0 -> siniersiz), calisani bulana kadar hizlica
+        return call_llm(prompt, system=SYSTEM_PROMPT,
+                        max_tokens=(1200 if kisa else 2000), validate=_valid, retries=0)
+    except Exception as e:
+        # Hicbir key calismazsa: gercek verilerden deterministik rapor uret (bos kalmasin)
+        print(f"   [LLM] tum key'ler basarisiz ({e}); deterministik rapora geciliyor.")
+        return fallback_report(nace, fig1, fig2, fig3, fig4, fig5,
+                               iso_agg=iso_agg, fig6=fig6, fig7=fig7)
 
 
 # ─── EXCEL 'Analiz' sayfasi (eski uyumluluk icin tutuluyor) ──────────────────

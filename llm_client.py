@@ -85,6 +85,10 @@ def call_llm(prompt, system=None, max_tokens=2000, retries=10, validate=None):
     if not rows:
         raise RuntimeError("Hicbir key bulunamadi")
 
+    # Sohbet disi modelleri ele (embedding/image/tts/whisper vb. metin ureticisi degil)
+    SKIP = ('embedding', 'image', 'whisper', 'tts', 'audio', 'rerank', 'vision-ocr')
+    rows = [r for r in rows if not any(s in r['model'].lower() for s in SKIP)]
+
     # Oncelikli modeli bul, olmayan key varsa siradakini dene
     tried = set()
     queue = []
@@ -104,8 +108,11 @@ def call_llm(prompt, system=None, max_tokens=2000, retries=10, validate=None):
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
 
+    # retries=0 -> TUM key'leri sirayla dene (calisani bulana kadar hizlica)
+    attempt_queue = queue if not retries else queue[:retries]
+
     last_err = None
-    for attempt, row in enumerate(queue[:retries]):
+    for attempt, row in enumerate(attempt_queue):
         try:
             body = json.dumps({
                 "model":      row['model'],
