@@ -93,14 +93,35 @@ st.markdown(f"""
 html, body, [class*="css"], .stApp {{
   font-family: 'Inter', {FONT};
   color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }}
+/* Zengin, çok katmanlı arkaplan — düz beyaz yerine hafif ışıltılı doku */
 .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {{
-  background: {WHITE};
+  background:
+    radial-gradient(1100px 500px at 12% -8%, rgba(37,99,235,.05), transparent 60%),
+    radial-gradient(900px 460px at 100% 0%, rgba(13,148,136,.04), transparent 55%),
+    {WHITE};
 }}
 .main .block-container {{
   padding: 1.2rem 2.2rem 3rem 2.2rem;
   max-width: 1500px;
 }}
+
+/* ── Özel kaydırma çubuğu (premium sinyal) ── */
+* {{ scrollbar-width: thin; scrollbar-color: #CBD5E1 transparent; }}
+::-webkit-scrollbar {{ width: 10px; height: 10px; }}
+::-webkit-scrollbar-track {{ background: transparent; }}
+::-webkit-scrollbar-thumb {{
+  background: linear-gradient(180deg, #CBD5E1, #B4C0D0);
+  border-radius: 99px; border: 2px solid transparent; background-clip: padding-box;
+}}
+::-webkit-scrollbar-thumb:hover {{ background: {BRAND}; background-clip: padding-box; }}
+
+/* ── Metin seçimi & odak halkası ── */
+::selection {{ background: rgba(37,99,235,.18); color: {INK}; }}
+:focus-visible {{ outline: 2px solid rgba(37,99,235,.5); outline-offset: 2px; border-radius: 6px; }}
 /* NOT: stHeader'i tamamen gizlemek sidebar'i acip-kapatan oku (collapsedControl)
    da yok ediyordu -> "sidebar kayboldu" hatasi. Sadece menu/footer'i gizle,
    header'i seffaf ama islevsel birak; toggle her zaman erisilebilir kalsin. */
@@ -127,87 +148,126 @@ button[kind="header"], [data-testid="stSidebarCollapsedControl"],
 
 /* ── Header ── */
 .app-header {{
-  background: linear-gradient(120deg, {NAVY} 0%, {BRAND_DK} 55%, {BRAND} 100%);
-  border-radius: 16px;
-  padding: 1.5rem 2rem;
-  margin-bottom: 1.4rem;
-  box-shadow: 0 10px 30px -12px rgba(29,78,216,.45);
+  background:
+    radial-gradient(700px 300px at 88% -30%, rgba(14,165,233,.45), transparent 60%),
+    radial-gradient(600px 260px at 10% 130%, rgba(13,148,136,.35), transparent 60%),
+    linear-gradient(120deg, {NAVY} 0%, {BRAND_DK} 52%, {BRAND} 100%);
+  border-radius: 18px;
+  padding: 1.6rem 2.1rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 18px 40px -18px rgba(29,78,216,.55),
+              inset 0 1px 0 rgba(255,255,255,.14);
   position: relative;
   overflow: hidden;
 }}
+/* dönen ışıltı sweep — sürekli, yeniden başlamadan */
+.app-header::before {{
+  content:""; position:absolute; inset:0;
+  background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,.10) 46%,
+              rgba(255,255,255,.04) 54%, transparent 70%);
+  transform: translateX(-100%);
+  animation: hdrShine 7s ease-in-out infinite;
+}}
+@keyframes hdrShine {{
+  0% {{ transform: translateX(-120%); }}
+  55%,100% {{ transform: translateX(120%); }}
+}}
 .app-header::after {{
   content:""; position:absolute; right:-40px; top:-40px;
-  width:220px; height:220px; border-radius:50%;
-  background: radial-gradient(circle, rgba(255,255,255,.12), transparent 70%);
+  width:240px; height:240px; border-radius:50%;
+  background: radial-gradient(circle, rgba(255,255,255,.14), transparent 70%);
 }}
+.app-header > * {{ position: relative; z-index: 2; }}
 .app-header .eyebrow {{
-  color: rgba(255,255,255,.72); font-size:.72rem; font-weight:600;
-  letter-spacing:.18em; text-transform:uppercase; margin-bottom:.35rem;
+  color: rgba(255,255,255,.75); font-size:.72rem; font-weight:700;
+  letter-spacing:.2em; text-transform:uppercase; margin-bottom:.4rem;
 }}
 .app-header h1 {{
-  color:#fff; font-size:1.7rem; font-weight:800; margin:0; line-height:1.15;
-  letter-spacing:-.02em;
+  color:#fff; font-size:1.75rem; font-weight:800; margin:0; line-height:1.12;
+  letter-spacing:-.025em; text-shadow: 0 1px 12px rgba(0,0,0,.15);
 }}
 .app-header .sub {{
-  color: rgba(255,255,255,.85); font-size:.92rem; font-weight:500; margin-top:.35rem;
+  color: rgba(255,255,255,.88); font-size:.92rem; font-weight:500; margin-top:.4rem;
 }}
 .app-header .meta {{
-  position:absolute; right:2rem; top:50%; transform:translateY(-50%);
-  text-align:right; z-index:2;
+  position:absolute; right:2.1rem; top:50%; transform:translateY(-50%);
+  text-align:right; z-index:3;
 }}
 .app-header .meta .chip {{
-  display:inline-block; background:rgba(255,255,255,.14);
-  border:1px solid rgba(255,255,255,.22); backdrop-filter:blur(6px);
-  color:#fff; font-size:.74rem; font-weight:600; padding:.35rem .8rem;
-  border-radius:999px; margin-left:.4rem;
+  display:inline-block; background:rgba(255,255,255,.16);
+  border:1px solid rgba(255,255,255,.28); backdrop-filter:blur(10px);
+  color:#fff; font-size:.74rem; font-weight:600; padding:.38rem .85rem;
+  border-radius:999px; margin-left:.45rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  transition: transform .2s ease, background .2s ease;
 }}
+.app-header .meta .chip:hover {{ transform:translateY(-1px); background:rgba(255,255,255,.24); }}
 
 /* ── KPI ── */
 .kpi {{
-  background:{WHITE}; border:1px solid var(--line);
-  border-radius:14px; padding:1rem 1.15rem .95rem 1.15rem;
+  background: linear-gradient(180deg, {WHITE} 0%, #FCFDFF 100%);
+  border:1px solid var(--line);
+  border-radius:16px; padding:1rem 1.15rem .95rem 1.25rem;
   position:relative; overflow:hidden; height:100%;
-  box-shadow: 0 1px 2px rgba(15,23,41,.04);
-  transition: transform .15s ease, box-shadow .15s ease;
+  box-shadow: 0 1px 2px rgba(15,23,41,.04), 0 8px 18px -16px rgba(15,23,41,.15);
+  transition: transform .22s cubic-bezier(.2,.7,.3,1),
+              box-shadow .22s ease, border-color .22s ease;
 }}
-.kpi:hover {{ transform:translateY(-2px); box-shadow:0 8px 24px -12px rgba(15,23,41,.22); }}
+.kpi:hover {{
+  transform:translateY(-4px);
+  box-shadow:0 16px 34px -16px rgba(15,23,41,.28);
+  border-color:#D3DEEC;
+}}
+/* renkli, parıltılı vurgu çubuğu */
 .kpi::before {{
   content:""; position:absolute; left:0; top:0; bottom:0; width:4px;
-  background:var(--brand);
+  background:linear-gradient(180deg, var(--brand), #60A5FA);
+  box-shadow: 0 0 14px rgba(37,99,235,.5);
 }}
-.kpi.pos::before {{ background:var(--pos); }}
-.kpi.neg::before {{ background:var(--neg); }}
+.kpi.pos::before {{ background:linear-gradient(180deg, var(--pos), #34D399); box-shadow:0 0 14px rgba(5,150,105,.45); }}
+.kpi.neg::before {{ background:linear-gradient(180deg, var(--neg), #F87171); box-shadow:0 0 14px rgba(220,38,38,.4); }}
+/* hover'da ışık süpürme */
+.kpi::after {{
+  content:""; position:absolute; top:0; left:-60%; width:45%; height:100%;
+  background:linear-gradient(105deg, transparent, rgba(37,99,235,.06), transparent);
+  transform:skewX(-18deg); transition:left .55s ease;
+}}
+.kpi:hover::after {{ left:130%; }}
 .kpi .k-label {{
-  font-size:.7rem; font-weight:600; color:var(--muted);
-  text-transform:uppercase; letter-spacing:.07em; margin-bottom:.35rem;
+  font-size:.7rem; font-weight:700; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.07em; margin-bottom:.4rem;
   display:flex; align-items:center; gap:.35rem;
 }}
 .kpi .k-value {{
-  font-size:1.85rem; font-weight:800; letter-spacing:-.02em;
+  font-size:1.9rem; font-weight:800; letter-spacing:-.025em;
   line-height:1; color:var(--ink);
+  font-variant-numeric: tabular-nums;
 }}
 .kpi.pos .k-value {{ color:var(--pos); }}
 .kpi.neg .k-value {{ color:var(--neg); }}
 .kpi .k-sub {{
-  font-size:.72rem; color:var(--muted); margin-top:.45rem; font-weight:500;
+  font-size:.72rem; color:var(--muted); margin-top:.5rem; font-weight:500;
 }}
 .kpi .k-badge {{
   display:inline-flex; align-items:center; gap:.2rem;
-  font-size:.72rem; font-weight:700; padding:.12rem .45rem;
-  border-radius:6px; margin-left:auto;
+  font-size:.72rem; font-weight:800; padding:.14rem .5rem;
+  border-radius:999px; margin-left:auto;
+  font-variant-numeric: tabular-nums;
 }}
-.badge-pos {{ background:rgba(5,150,105,.1); color:var(--pos); }}
-.badge-neg {{ background:rgba(220,38,38,.1); color:var(--neg); }}
-.badge-neu {{ background:rgba(100,116,139,.12); color:var(--muted); }}
+.badge-pos {{ background:rgba(5,150,105,.12); color:var(--pos); }}
+.badge-neg {{ background:rgba(220,38,38,.12); color:var(--neg); }}
+.badge-neu {{ background:rgba(100,116,139,.14); color:var(--muted); }}
 
 /* ── Bölüm başlığı ── */
 .sec-title {{
-  display:flex; align-items:center; gap:.55rem;
-  font-size:1.02rem; font-weight:700; color:var(--ink);
-  margin:.3rem 0 .25rem 0; letter-spacing:-.01em;
+  display:flex; align-items:center; gap:.6rem;
+  font-size:1.05rem; font-weight:800; color:var(--ink);
+  margin:.3rem 0 .25rem 0; letter-spacing:-.015em;
 }}
 .sec-title .dot {{
-  width:8px; height:8px; border-radius:3px; background:var(--brand); flex:none;
+  width:9px; height:9px; border-radius:3px; flex:none;
+  background:linear-gradient(135deg, var(--brand), #60A5FA);
+  box-shadow: 0 0 10px rgba(37,99,235,.55);
 }}
 .sec-sub {{
   font-size:.82rem; color:var(--muted); font-weight:500;
@@ -233,10 +293,20 @@ button[kind="header"], [data-testid="stSidebarCollapsedControl"],
 
 /* ── Rapor ── */
 .report {{
-  background:{WHITE}; border:1px solid var(--line);
-  border-radius:14px; padding:1.5rem 1.75rem; margin-top:.5rem;
-  font-size:.9rem; line-height:1.75; color:var(--ink-soft);
-  box-shadow:0 1px 2px rgba(15,23,41,.04);
+  background:
+    linear-gradient(180deg, rgba(37,99,235,.03), transparent 90px),
+    {WHITE};
+  border:1px solid var(--line);
+  border-radius:16px; padding:1.5rem 1.85rem; margin-top:.5rem;
+  font-size:.9rem; line-height:1.78; color:var(--ink-soft);
+  box-shadow:0 2px 4px rgba(15,23,41,.04), 0 18px 40px -28px rgba(15,23,41,.25);
+  position:relative;
+}}
+.report::before {{
+  content:""; position:absolute; left:0; right:0; top:0; height:3px;
+  border-radius:16px 16px 0 0;
+  background:linear-gradient(90deg, var(--brand), {TEAL}, {AMBER});
+  opacity:.85;
 }}
 .report b {{ color:var(--ink); font-weight:700; }}
 .report .r-head {{
@@ -286,11 +356,12 @@ button[kind="header"], [data-testid="stSidebarCollapsedControl"],
 }}
 .side-label.first {{ margin-top: .2rem; }}
 
-/* Sidebar içi kart grupları */
+/* Sidebar içi kart grupları — hafif cam */
 .side-card {{
-  background: {WHITE}; border: 1px solid var(--line); border-radius: 12px;
-  padding: .85rem .9rem; margin-bottom: .7rem;
-  box-shadow: 0 1px 2px rgba(15,23,41,.03);
+  background: rgba(255,255,255,.7); backdrop-filter: blur(8px);
+  border: 1px solid var(--line); border-radius: 13px;
+  padding: .85rem .95rem; margin-bottom: .7rem;
+  box-shadow: 0 2px 8px -4px rgba(15,23,41,.1);
 }}
 
 /* Sidebar form elemanları — ortak dokunuş */
@@ -327,36 +398,79 @@ button[kind="header"], [data-testid="stSidebarCollapsedControl"],
 
 /* ── Tabs ── */
 .stTabs [data-baseweb="tab-list"] {{
-  gap:.15rem; background:{PANEL}; padding:.3rem; border-radius:12px;
+  gap:.15rem; padding:.32rem; border-radius:14px;
+  background: linear-gradient(180deg, #F1F5FB, {PANEL});
   border:1px solid var(--line);
+  box-shadow: inset 0 1px 2px rgba(15,23,41,.03);
+  flex-wrap: wrap;
 }}
 .stTabs [data-baseweb="tab"] {{
   font-size:.82rem; font-weight:600; color:var(--muted);
-  border-radius:9px; padding:.5rem .9rem; background:transparent;
+  border-radius:10px; padding:.5rem .95rem; background:transparent;
+  transition: color .18s ease, background .18s ease, transform .18s ease;
 }}
+.stTabs [data-baseweb="tab"]:hover {{ color:var(--ink-soft); background:rgba(255,255,255,.6); }}
 .stTabs [aria-selected="true"] {{
   background:{WHITE} !important; color:var(--brand) !important;
-  box-shadow:0 1px 3px rgba(15,23,41,.1);
+  box-shadow:0 2px 8px -2px rgba(37,99,235,.28), 0 1px 2px rgba(15,23,41,.06);
+  transform: translateY(-1px);
 }}
 .stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] {{ display:none; }}
-.stTabs [data-baseweb="tab-panel"] {{ padding-top:1.1rem; }}
+.stTabs [data-baseweb="tab-panel"] {{ padding-top:1.15rem; }}
 
 /* ── Butonlar ── */
 .stButton > button {{
-  background:var(--brand); color:#fff; border:none; border-radius:10px;
-  padding:.6rem 1.4rem; font-weight:700; font-size:.88rem;
-  box-shadow:0 4px 12px -4px rgba(37,99,235,.5); transition:all .15s;
+  background:linear-gradient(180deg, #3B82F6, {BRAND}); color:#fff; border:none;
+  border-radius:11px; padding:.6rem 1.5rem; font-weight:700; font-size:.88rem;
+  box-shadow:0 6px 16px -6px rgba(37,99,235,.6), inset 0 1px 0 rgba(255,255,255,.25);
+  transition:transform .18s cubic-bezier(.2,.7,.3,1), box-shadow .18s ease, filter .18s ease;
+  position:relative; overflow:hidden;
 }}
-.stButton > button:hover {{ background:{BRAND_DK}; transform:translateY(-1px); }}
+.stButton > button:hover {{
+  transform:translateY(-2px); filter:saturate(1.08);
+  box-shadow:0 12px 24px -8px rgba(37,99,235,.6), inset 0 1px 0 rgba(255,255,255,.3);
+}}
+.stButton > button:active {{ transform:translateY(0); }}
 .stDownloadButton > button {{
-  background:{WHITE}; color:var(--brand); border:1.5px solid var(--brand);
-  border-radius:10px; font-weight:700; font-size:.84rem;
+  background:{WHITE}; color:var(--brand); border:1.5px solid #BFD3F5;
+  border-radius:11px; font-weight:700; font-size:.84rem; transition:all .18s ease;
 }}
-.stDownloadButton > button:hover {{ background:rgba(37,99,235,.06); }}
+.stDownloadButton > button:hover {{
+  background:rgba(37,99,235,.06); border-color:var(--brand); transform:translateY(-1px);
+}}
 
 hr {{ border-color:var(--line); margin:1.5rem 0; }}
+.stRadio [role="radiogroup"] {{ gap:.3rem; }}
 .stRadio [role="radiogroup"] label p {{ font-size:.82rem; font-weight:600; }}
-[data-testid="stExpander"] {{ border:1px solid var(--line); border-radius:12px; }}
+
+/* ── Expander ── */
+[data-testid="stExpander"] {{
+  border:1px solid var(--line); border-radius:14px; overflow:hidden;
+  box-shadow: 0 1px 2px rgba(15,23,41,.03); transition: box-shadow .2s ease;
+}}
+[data-testid="stExpander"]:hover {{ box-shadow: 0 6px 18px -12px rgba(15,23,41,.2); }}
+[data-testid="stExpander"] summary {{ font-weight:600; font-size:.85rem; }}
+[data-testid="stExpander"] summary:hover {{ color:var(--brand); }}
+
+/* ── DataFrame ── */
+[data-testid="stDataFrame"] {{
+  border-radius:12px; overflow:hidden; border:1px solid var(--line);
+}}
+
+/* ── Metric / caption ── */
+.stCaption, [data-testid="stCaptionContainer"] {{ color:var(--muted); }}
+
+/* ── Spinner marka rengi ── */
+.stSpinner > div {{ border-top-color: var(--brand) !important; }}
+
+/* ── Plotly kabı — yumuşak çerçeve ── */
+[data-testid="stPlotlyChart"] {{
+  border-radius:14px;
+}}
+
+/* ── Genel giriş: sadece ilk yüklemede yumuşak açılış (rerun'da replay olmaz) ── */
+.app-header {{ animation: fadeSlide .5s ease both; }}
+@keyframes fadeSlide {{ from {{ opacity:0; transform:translateY(-6px); }} to {{ opacity:1; transform:none; }} }}
 
 .app-foot {{
   text-align:center; color:{MUTED}; font-size:.72rem; font-weight:500;
@@ -487,20 +601,30 @@ def first_series(fig_dict):
     if not fig_dict: return None
     return next(iter(fig_dict.values()), None)
 
-def spark_svg(series, color, w=120, h=26, n=24):
-    """KPI kartı içi mini eğri (son n ay)."""
+def spark_svg(series, color, w=124, h=30, n=24):
+    """KPI kartı içi mini eğri (son n ay) — gradyan dolgulu."""
     if not series: return ""
     ys = [v for _, v in sorted(series.items())[-n:] if v is not None]
     if len(ys) < 3: return ""
     mn, mx = min(ys), max(ys)
     rng = (mx - mn) or 1
     step = w / (len(ys) - 1)
-    pts = " ".join(f"{i*step:.1f},{h - (y-mn)/rng*(h-6) - 3:.1f}" for i, y in enumerate(ys))
-    lx, ly = (len(ys)-1)*step, h - (ys[-1]-mn)/rng*(h-6) - 3
-    return (f'<svg width="{w}" height="{h}" style="display:block;margin-top:.45rem">'
-            f'<polyline points="{pts}" fill="none" stroke="{color}" stroke-width="1.6" '
-            f'stroke-linejoin="round" stroke-linecap="round" opacity=".8"/>'
-            f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="2.4" fill="{color}"/></svg>')
+    coords = [(i*step, h - (y-mn)/rng*(h-8) - 4) for i, y in enumerate(ys)]
+    line_pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in coords)
+    area_pts = f"0,{h} " + line_pts + f" {w},{h}"
+    lx, ly = coords[-1]
+    gid = f"sg{abs(hash((color, len(ys), round(ys[-1], 2)))) % 100000}"
+    return (
+        f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" '
+        f'preserveAspectRatio="none" style="display:block;margin-top:.5rem;width:100%">'
+        f'<defs><linearGradient id="{gid}" x1="0" y1="0" x2="0" y2="1">'
+        f'<stop offset="0" stop-color="{color}" stop-opacity=".22"/>'
+        f'<stop offset="1" stop-color="{color}" stop-opacity="0"/></linearGradient></defs>'
+        f'<polygon points="{area_pts}" fill="url(#{gid})"/>'
+        f'<polyline points="{line_pts}" fill="none" stroke="{color}" stroke-width="1.8" '
+        f'stroke-linejoin="round" stroke-linecap="round"/>'
+        f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="2.6" fill="{color}" '
+        f'stroke="#fff" stroke-width="1.2"/></svg>')
 
 def kpi_card(col, label, value, sub, tone=None, badge=None, icon="", spark=""):
     cls = {"pos": "pos", "neg": "neg"}.get(tone, "")
