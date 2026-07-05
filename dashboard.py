@@ -905,9 +905,9 @@ _ih_ser    = first_series(ih_series) or {}
 _it_ser    = first_series(it_series) or {}
 _net_trade = diff_series(_ih_ser, _it_ser)            # dış ticaret makası (ihr - ith)
 
-reel_v, reel_p = last_value(_reel_ciro)
-verim_v, _     = last_value(_verim)
-net_v, _       = last_value(_net_trade)
+reel_p, reel_v = last_value(_reel_ciro)   # last_value → (dönem, değer)
+_, verim_v     = last_value(_verim)
+_, net_v       = last_value(_net_trade)
 prod_mom       = momentum(_prod_ser)
 
 st.markdown("<div style='height:.7rem'></div>", unsafe_allow_html=True)
