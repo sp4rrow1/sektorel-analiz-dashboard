@@ -19,6 +19,39 @@ st.set_page_config(
 )
 
 # ════════════════════════════════════════════════════════════════════════════════
+#  ERİŞİM ŞİFRESİ
+# ════════════════════════════════════════════════════════════════════════════════
+# Streamlit Cloud'da Advanced settings > Secrets içine APP_PASSWORD = "..." ekleyerek
+# değiştirilebilir. Secret tanımlı değilse varsayılan "1" kullanılır.
+_APP_PASSWORD = st.secrets.get("APP_PASSWORD", "1") if hasattr(st, "secrets") else "1"
+
+if not st.session_state.get("_authed", False):
+    st.markdown("""
+    <style>
+    .stApp { background:#0F1729; }
+    [data-testid="stAppViewContainer"] { background:#0F1729; }
+    </style>
+    """, unsafe_allow_html=True)
+    _c1, _c2, _c3 = st.columns([1, 1.1, 1])
+    with _c2:
+        st.markdown("<div style='height:14vh'></div>", unsafe_allow_html=True)
+        st.markdown("""
+        <div style='text-align:center;margin-bottom:1.2rem;'>
+          <div style='font-size:1.4rem;font-weight:800;color:#fff;'>📊 Sektörel Analiz</div>
+          <div style='font-size:.8rem;color:#94A3B8;margin-top:.2rem;'>Devam etmek için şifre girin</div>
+        </div>
+        """, unsafe_allow_html=True)
+        _pw = st.text_input("Şifre", type="password", label_visibility="collapsed",
+                            placeholder="Şifre")
+        if st.button("Giriş", use_container_width=True):
+            if _pw == _APP_PASSWORD:
+                st.session_state["_authed"] = True
+                st.rerun()
+            else:
+                st.error("Hatalı şifre.")
+    st.stop()
+
+# ════════════════════════════════════════════════════════════════════════════════
 #  TASARIM SİSTEMİ
 # ════════════════════════════════════════════════════════════════════════════════
 INK        = "#0F1729"   # Ana metin
