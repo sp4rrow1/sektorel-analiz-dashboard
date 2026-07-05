@@ -585,7 +585,7 @@ def series_xy(s, n):
     return xs, ys
 
 def end_label(fig, xs, ys, color, fmt="{:+.1f}%"):
-    """Serinin son noktasına işaretçi + değer etiketi koyar."""
+    """Tek serinin uç noktası — çakışma yoksa doğrudan kullan."""
     if not xs: return
     fig.add_trace(go.Scatter(
         x=[xs[-1]], y=[ys[-1]], mode="markers+text",
@@ -594,6 +594,36 @@ def end_label(fig, xs, ys, color, fmt="{:+.1f}%"):
         textfont=dict(size=11.5, color=color, family="Inter"),
         showlegend=False, hoverinfo="skip", cliponaxis=False,
     ))
+
+def add_end_labels(fig, ends, gap_frac=0.07):
+    """
+    ends: [(x_last, y_last, color, fmt_str)] — çok serili çizgilerde uç etiketleri
+    dikey olarak yayarak üst üste binmelerini önler. İşaretçi gerçek noktada kalır,
+    değer etiketi çakışmayacak şekilde kaydırılır.
+    """
+    ends = [e for e in ends if e[0] is not None and e[1] is not None]
+    if not ends: return
+    ys = [e[1] for e in ends]
+    rng = (max(ys) - min(ys)) or (abs(max(ys)) or 1)
+    gap = rng * gap_frac
+    order = sorted(range(len(ends)), key=lambda i: ends[i][1])
+    adj = {}
+    prev = None
+    for i in order:
+        y = ends[i][1]
+        if prev is not None and y - prev < gap:
+            y = prev + gap
+        adj[i] = y
+        prev = y
+    for i, (x, yv, color, fmt) in enumerate(ends):
+        fig.add_trace(go.Scatter(
+            x=[x], y=[yv], mode="markers",
+            marker=dict(color=color, size=7, line=dict(color=WHITE, width=1.4)),
+            showlegend=False, hoverinfo="skip", cliponaxis=False))
+        fig.add_annotation(
+            x=x, y=adj[i], text=fmt.format(yv),
+            xref="x", yref="y", xanchor="left", xshift=9, showarrow=False,
+            font=dict(size=11, color=color, family="Inter"), align="left")
 
 def fmt_val(v, suffix="%", signed=True):
     if v is None: return "—"
@@ -1142,6 +1172,7 @@ with tabs[1]:
             cmp_sub = f" · kıyas: {compare_nace}" if compare_nace else ""
             chart_head("Aylık Seyir", f"Son {ay_sayisi} ay · YoY %{cmp_sub}")
             fig2 = go.Figure()
+            _ends = []
             for i, (lbl, s) in enumerate(f1.items()):
                 xs, ys = series_xy(s, ay_sayisi)
                 col = SERIES_PAL[i % len(SERIES_PAL)]
@@ -1150,7 +1181,7 @@ with tabs[1]:
                     x=xs, y=ys, mode="lines", name=disp,
                     line=dict(color=col, width=2, shape="spline", smoothing=.8),
                     hovertemplate="<b>%{y:.1f}%</b><extra>" + disp[:26] + "</extra>"))
-                end_label(fig2, xs, ys, col)
+                if xs: _ends.append((xs[-1], ys[-1], col, "{:+.1f}%"))
 
             if compare_nace:
                 f1_cmp = build_sekil1(compare_nace, cache["alt_c"], ana_c_series=_ana_c)
@@ -1161,16 +1192,17 @@ with tabs[1]:
                             if v is not None: merged_c.setdefault(p, []).append(v)
                     cmp_avg = {p: sum(vs)/len(vs) for p, vs in merged_c.items()}
                     xs_c, ys_c = series_xy(cmp_avg, ay_sayisi)
-                    cmp_name = SECTOR_NAMES.get(compare_nace, compare_nace)
                     fig2.add_trace(go.Scatter(
                         x=xs_c, y=ys_c, mode="lines",
                         name=f"⚖ {compare_nace} · {short_name(compare_nace, 26)}",
                         line=dict(color=INK_SOFT, width=2.2, dash="dash", shape="spline", smoothing=.8),
                         hovertemplate="<b>%{y:.1f}%</b><extra>Kıyas: " + short_name(compare_nace, 22) + "</extra>"))
-                    end_label(fig2, xs_c, ys_c, INK_SOFT)
+                    if xs_c: _ends.append((xs_c[-1], ys_c[-1], INK_SOFT, "{:+.1f}%"))
+            add_end_labels(fig2, _ends)
 
-            fig2.update_layout(**LAYOUT, height=330,
-                               legend=dict(orientation="h", y=-0.22, x=0, font=dict(size=10.5)))
+            fig2.update_layout(**LAYOUT, height=360,
+                               margin=dict(l=8, r=64, t=8, b=64),
+                               legend=dict(orientation="h", y=-0.28, x=0, font=dict(size=10)))
             fig2.update_xaxes(dtick=6)
             fig2.add_hline(y=0, line_width=1, line_color="#CBD5E1")
             st.plotly_chart(fig2, use_container_width=True, config=NOBAR)
@@ -1274,6 +1306,7 @@ with tabs[3]:
         with c1:
             chart_head("Aylık Seyir", f"Son {ay_sayisi} ay")
             fig = go.Figure()
+            _ends = []
             for lbl, s in f3.items():
                 is_exp = "hracat" in lbl and "thalat" not in lbl
                 xs, ys = series_xy(s, ay_sayisi)
@@ -1281,12 +1314,12 @@ with tabs[3]:
                 fig.add_trace(go.Scatter(
                     x=xs, y=ys, mode="lines", name="İhracat" if is_exp else "İthalat",
                     line=dict(color=col, width=2.4 if is_exp else 1.8,
-                              shape="spline", smoothing=.8,
-                              dash="solid" if is_exp else "solid"),
+                              shape="spline", smoothing=.8),
                     fill="tozeroy",
                     fillcolor="rgba(29,78,216,.06)" if is_exp else "rgba(148,163,184,.08)",
                     hovertemplate="<b>%{y:+.1f}%</b><extra>" + ("İhracat" if is_exp else "İthalat") + "</extra>"))
-                end_label(fig, xs, ys, col)
+                if xs: _ends.append((xs[-1], ys[-1], col, "{:+.1f}%"))
+            add_end_labels(fig, _ends)
             fig.update_layout(**LAYOUT, height=360)
             fig.update_xaxes(dtick=6)
             fig.update_yaxes(ticksuffix="%")
@@ -1329,6 +1362,7 @@ with tabs[4]:
         hi = max(all_v) + 3 if all_v else 90
 
         fig = go.Figure()
+        _ends = []
         for lbl, s in f4.items():
             is_tot = "anayii" in lbl and nace != TOTAL_MANUFACTURING
             d = dict(s) if not isinstance(s, dict) else s
@@ -1342,7 +1376,8 @@ with tabs[4]:
                 line=dict(color=col, width=1.8 if is_tot else 2.6,
                           dash="dot" if is_tot else "solid", shape="spline", smoothing=.8),
                 hovertemplate="<b>%{y:.1f}%</b><extra>" + disp_name[:22] + "</extra>"))
-            end_label(fig, xs, ys, col, fmt="{:.1f}%")
+            if xs: _ends.append((xs[-1], ys[-1], col, "{:.1f}%"))
+        add_end_labels(fig, _ends, gap_frac=0.06)
         fig.update_layout(**LAYOUT, height=400)
         fig.update_xaxes(dtick=6)
         fig.update_yaxes(ticksuffix="%", range=[lo, hi], zeroline=False)
@@ -1362,6 +1397,7 @@ with tabs[5]:
             return f"{code.lstrip('C')} · {short_name(code, 30)}" if code else lbl[:30]
 
         fig = go.Figure()
+        _ends = []
         for i, (lbl, s) in enumerate(f5.items()):
             is_tot = (" c " in (" " + lbl.lower() + " ") and "yillik" in lbl.lower()
                      and nace != TOTAL_MANUFACTURING)
@@ -1372,9 +1408,11 @@ with tabs[5]:
                 line=dict(color=col, width=1.8 if is_tot else 2.2,
                           dash="dot" if is_tot else "solid", shape="spline", smoothing=.8),
                 hovertemplate="<b>%{y:.1f}%</b><extra>" + ufe_label(lbl)[:24] + "</extra>"))
-            end_label(fig, xs, ys, col, fmt="{:.1f}%")
-        fig.update_layout(**LAYOUT, height=400,
-                          legend=dict(orientation="h", y=-0.2, x=0, font=dict(size=10.5)))
+            if xs: _ends.append((xs[-1], ys[-1], col, "{:.0f}%"))
+        add_end_labels(fig, _ends, gap_frac=0.075)
+        fig.update_layout(**LAYOUT, height=430,
+                          margin=dict(l=8, r=64, t=8, b=68),
+                          legend=dict(orientation="h", y=-0.26, x=0, font=dict(size=10)))
         fig.update_xaxes(dtick=6)
         fig.update_yaxes(ticksuffix="%")
         fig.add_hline(y=0, line_width=1, line_color="#CBD5E1")
@@ -1391,6 +1429,7 @@ with tabs[6]:
         with c1:
             chart_head("Aylık Seyir", f"Son {ay_sayisi} ay")
             fig = go.Figure()
+            _ends = []
             for i, (lbl, s) in enumerate(f6.items()):
                 is_tot = "Toplam" in lbl and nace != TOTAL_MANUFACTURING
                 xs, ys = series_xy(s, ay_sayisi)
@@ -1403,7 +1442,8 @@ with tabs[6]:
                     line=dict(color=col, width=1.8 if is_tot else 2.6,
                               dash="dot" if is_tot else "solid", shape="spline", smoothing=.8),
                     hovertemplate="<b>%{y:+.1f}%</b><extra>" + disp_name[:22] + "</extra>"))
-                end_label(fig, xs, ys, col)
+                if xs: _ends.append((xs[-1], ys[-1], col, "{:+.1f}%"))
+            add_end_labels(fig, _ends)
             fig.update_layout(**LAYOUT, height=360)
             fig.update_xaxes(dtick=6)
             fig.update_yaxes(ticksuffix="%")
@@ -1440,6 +1480,7 @@ with tabs[7]:
     sec_title("Ücretli Çalışan Sayısı", "İstihdam, önceki yıla göre değişim (%)")
     if f7:
         fig = go.Figure()
+        _ends = []
         for i, (lbl, s) in enumerate(f7.items()):
             is_tot = "Toplam" in lbl and nace != TOTAL_MANUFACTURING
             xs, ys = series_xy(s, ay_sayisi)
@@ -1454,7 +1495,8 @@ with tabs[7]:
                 fill="tozeroy" if not is_tot else "none",
                 fillcolor="rgba(13,148,136,.07)" if not is_tot else None,
                 hovertemplate="<b>%{y:+.2f}%</b><extra>" + disp_name[:22] + "</extra>"))
-            end_label(fig, xs, ys, col)
+            if xs: _ends.append((xs[-1], ys[-1], col, "{:+.1f}%"))
+        add_end_labels(fig, _ends)
         fig.update_layout(**LAYOUT, height=400)
         fig.update_xaxes(dtick=6)
         fig.update_yaxes(ticksuffix="%")
@@ -1734,20 +1776,24 @@ with tabs[10]:
                    "Nominal ciro ÜFE ile deflate edildi · reel = gerçek büyüme")
         if _ciro_ser and _reel_ciro:
             fig = go.Figure()
+            _ends = []
             xs_n, ys_n = series_xy(_ciro_ser, ay_sayisi)
             fig.add_trace(go.Scatter(x=xs_n, y=ys_n, mode="lines", name="Nominal Ciro",
                 line=dict(color="#94A3B8", width=1.8, shape="spline", smoothing=.8),
                 hovertemplate="<b>%{y:+.1f}%</b><extra>Nominal</extra>"))
+            if xs_n: _ends.append((xs_n[-1], ys_n[-1], "#94A3B8", "{:+.0f}%"))
             xs_u, ys_u = series_xy(_ufe_ser, ay_sayisi)
             fig.add_trace(go.Scatter(x=xs_u, y=ys_u, mode="lines", name="ÜFE (maliyet)",
                 line=dict(color=AMBER, width=1.6, dash="dot", shape="spline", smoothing=.8),
                 hovertemplate="<b>%{y:+.1f}%</b><extra>ÜFE</extra>"))
+            if xs_u: _ends.append((xs_u[-1], ys_u[-1], AMBER, "{:+.0f}%"))
             xs_r, ys_r = series_xy(_reel_ciro, ay_sayisi)
             fig.add_trace(go.Scatter(x=xs_r, y=ys_r, mode="lines", name="Reel Ciro",
                 line=dict(color=BRAND, width=2.8, shape="spline", smoothing=.8),
                 fill="tozeroy", fillcolor="rgba(37,99,235,.06)",
                 hovertemplate="<b>%{y:+.1f}%</b><extra>Reel</extra>"))
-            end_label(fig, xs_r, ys_r, BRAND)
+            if xs_r: _ends.append((xs_r[-1], ys_r[-1], BRAND, "{:+.0f}%"))
+            add_end_labels(fig, _ends, gap_frac=0.08)
             fig.update_layout(**LAYOUT, height=360)
             fig.update_xaxes(dtick=6)
             fig.update_yaxes(ticksuffix="%")
