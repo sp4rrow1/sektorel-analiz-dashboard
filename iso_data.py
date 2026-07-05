@@ -112,11 +112,24 @@ def load_iso():
     return _DF
 
 
-def sector_iso(nace):
+def sector_years(nace):
+    """Sektör için İSO verisinde mevcut yıllar (büyükten küçüğe)."""
+    df = load_iso()
+    if nace == 'C':
+        sec = df[df['nace2'].str.startswith('C', na=False)]
+    else:
+        sec = df[df['nace2'] == nace]
+    if sec.empty:
+        return []
+    return sorted({int(y) for y in sec['yil'].dropna().unique()}, reverse=True)
+
+
+def sector_iso(nace, year=None):
     """
     Sektörün İSO evrenindeki tam fotoğrafı.
     nace == 'C' (ana imalat sanayii toplamı) verilirse tüm imalat sektörlerinin
     (C10..C33) birleşik evreni döner — İSO 500 + İkinci 500'ün tamamı.
+    year verilirse o yılın kesiti; None ise en güncel yıl.
     Döner: dict — yoksa None.
     """
     df = load_iso()
@@ -142,10 +155,12 @@ def sector_iso(nace):
         })
     out['yearly'] = sorted(yearly, key=lambda r: (r['yil'], r['liste']))
 
-    # ── Son yıl (İSO 500 öncelikli) birleşik firma tablosu ───────────────────
-    last_yr = int(sec['yil'].max())
+    # ── Seçilen (ya da en güncel) yıl — İSO 500 öncelikli firma tablosu ───────
+    avail_years = sorted({int(y) for y in sec['yil'].dropna().unique()})
+    last_yr = int(year) if (year is not None and int(year) in avail_years) else int(sec['yil'].max())
     cur = sec[sec['yil'] == last_yr].sort_values('uretim_satis', ascending=False)
     out['yil'] = last_yr
+    out['available_years'] = sorted(avail_years, reverse=True)
     out['firma_sayisi'] = int(len(cur))
     out['firma_500']    = int((cur['liste'] == 'İSO 500').sum())
     out['firma_2_500']  = int((cur['liste'] == 'İSO İkinci 500').sum())

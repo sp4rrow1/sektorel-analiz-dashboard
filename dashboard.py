@@ -566,7 +566,8 @@ def annual_avg(series_dict, min_m=4):
         if v is None: continue
         by_year.setdefault(p.split("-")[0], []).append(v)
     if not by_year: return {}
-    return {yr: round(sum(vs)/len(vs), 2)
+    # 1 ondalık → çubuk/ısı haritası hover'larında hep temiz görünüm (ör. 36.2)
+    return {yr: round(sum(vs)/len(vs), 1)
             for yr, vs in sorted(by_year.items())
             if len(vs) >= min_m or yr == max(by_year)}
 
@@ -583,7 +584,9 @@ def tr_month(p):
 def series_xy(s, n):
     pts = sorted(last_n_months(s, n).items())
     xs = [tr_month(p) for p, v in pts if v is not None]
-    ys = [v for _, v in pts if v is not None]
+    # Grafiğe çizilen değerleri 1 ondalığa yuvarla → hover/etiketler her zaman
+    # temiz görünür (ör. -36.277... yerine -36.3), unified-hover fallback'te bile.
+    ys = [round(v, 1) for _, v in pts if v is not None]
     return xs, ys
 
 def end_label(fig, xs, ys, color, fmt="{:+.1f}%"):
@@ -1523,9 +1526,28 @@ with tabs[7]:
 # ── TAB 8: İSO 500 ───────────────────────────────────────────────────────────────
 with tabs[8]:
     if f8:
+        # ── Yıl seçimi ──
+        _years = f8.get("available_years") or [f8["yil"]]
+        ty1, ty2 = st.columns([3, 1])
+        with ty2:
+            sel_year = st.selectbox("İSO yılı", _years, index=0,
+                                    format_func=lambda y: f"{y} listesi",
+                                    key="iso_year",
+                                    label_visibility="collapsed")
+        # Seçilen yıl en güncelden farklıysa o yılın kesitini yeniden hesapla
+        if sel_year != f8["yil"]:
+            try:
+                from iso_data import sector_iso as _sec_iso
+                f8v = _sec_iso(nace, year=sel_year) or f8
+            except Exception:
+                f8v = f8
+        else:
+            f8v = f8
+        f8 = f8v
         yil8 = f8["yil"]
-        sec_title(f"İSO 500 & İkinci 500'de {sector_tr}",
-                  f"Türkiye'nin en büyük sanayi kuruluşları içindeki sektör fotoğrafı · {yil8}")
+        with ty1:
+            sec_title(f"İSO 500 & İkinci 500'de {sector_tr}",
+                      f"Türkiye'nin en büyük sanayi kuruluşları içindeki sektör fotoğrafı · {yil8}")
 
         # ── KPI satırı ──
         ic = st.columns(5)
@@ -1818,7 +1840,7 @@ with tabs[10]:
             ("İstihdam",   momentum(_emp_ser)),
             ("Verimlilik", momentum(_verim)),
         ]
-        mom_items = [(n, v) for n, v in mom_items if v is not None]
+        mom_items = [(n, round(v, 1)) for n, v in mom_items if v is not None]
         if mom_items:
             names = [n for n, _ in mom_items][::-1]
             mvals = [v for _, v in mom_items][::-1]
@@ -1852,15 +1874,15 @@ with tabs[10]:
             _common = sorted(set(_prod_ser) & set(_emp_ser))[-ay_sayisi:]
             _cx = [tr_month(p) for p in _common]
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=_cx, y=[_prod_ser[p] for p in _common],
+            fig.add_trace(go.Scatter(x=_cx, y=[round(_prod_ser[p], 1) for p in _common],
                 mode="lines", name="Üretim",
                 line=dict(color=BRAND, width=2, shape="spline", smoothing=.8),
                 hovertemplate="<b>%{y:+.1f}%</b><extra>Üretim</extra>"))
-            fig.add_trace(go.Scatter(x=_cx, y=[_emp_ser[p] for p in _common],
+            fig.add_trace(go.Scatter(x=_cx, y=[round(_emp_ser[p], 1) for p in _common],
                 mode="lines", name="İstihdam",
                 line=dict(color=TEAL, width=2, shape="spline", smoothing=.8),
                 hovertemplate="<b>%{y:+.1f}%</b><extra>İstihdam</extra>"))
-            _yv = [_verim.get(p, 0) for p in _common]
+            _yv = [round(_verim.get(p, 0), 1) for p in _common]
             fig.add_trace(go.Bar(x=_cx, y=_yv, name="Verimlilik (makas)",
                 marker_color=["rgba(5,150,105,.35)" if v >= 0 else "rgba(220,38,38,.35)" for v in _yv],
                 marker_line_width=0,
@@ -1885,7 +1907,7 @@ with tabs[10]:
             ("İstihdam", vol_std(_emp_ser)),
             ("ÜFE",      vol_std(_ufe_ser)),
         ]
-        vol_items = [(n, v) for n, v in vol_items if v is not None]
+        vol_items = [(n, round(v, 1)) for n, v in vol_items if v is not None]
         if vol_items:
             names = [n for n, _ in vol_items][::-1]
             vvals = [v for _, v in vol_items][::-1]
