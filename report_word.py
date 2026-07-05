@@ -75,25 +75,28 @@ def _heading_para(doc, text, level=1):
     return para
 
 def _sekil_title(doc, text):
-    """Şekil N: ... başlığı (koyu mavi, bold)"""
+    """Şekil N: ... başlığı — örnek belge: kalın SİYAH, Arial 10pt, ortalı."""
     para = doc.add_paragraph()
-    _para_spacing(para, before=100, after=40)
-    _run(para, text, bold=True, size_pt=10, color=CLR_BLUE_TITLE)
+    _para_spacing(para, before=120, after=60)
+    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(para, text, bold=True, size_pt=10, color=CLR_BODY)
     return para
 
 def _kaynak_line(doc, text):
-    """Kaynak: ... satiri (italik gri, kucuk)"""
+    """Kaynak: ... satiri — örnek belge: Arial 8pt, ortalı, siyah (italik değil)."""
     para = doc.add_paragraph()
-    _para_spacing(para, before=20, after=60)
-    _run(para, text, italic=True, size_pt=8, color=CLR_CAPTION)
+    _para_spacing(para, before=20, after=120)
+    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(para, text, italic=False, size_pt=8, color=CLR_BODY)
     return para
 
-def _bullet(doc, text):
-    """- ile baslayan madde satiri"""
+def _yorum_para(doc, text):
+    """Şekil yorumu — örnek belge: Arial 11pt, iki yana yaslı (justify), akıcı paragraf."""
     para = doc.add_paragraph()
-    _para_spacing(para, before=0, after=40)
-    para.paragraph_format.left_indent  = Cm(0.5)
-    _run(para, '– ' + text.lstrip('- –'), size_pt=9, color=CLR_BODY)
+    _para_spacing(para, before=0, after=120)
+    para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    para.paragraph_format.right_indent = Cm(0.2)
+    _run(para, text.strip(), size_pt=11, color=CLR_BODY)
     return para
 
 def _blank(doc, h_pt=4):
@@ -185,6 +188,59 @@ def _kpi_table(doc, fig1, fig3, fig4, fig5):
         _set_cell_fill(c1, CLR_PANEL)
     return tbl
 
+# ─── İSO FIRMA TABLOSU (örnek belge formatı) ─────────────────────────────────
+def _iso_table(doc, iso_agg):
+    """İlk 10 kuruluşu örnek belgedeki tablo düzeninde ekler."""
+    top = (iso_agg or {}).get('top10') or []
+    if not top:
+        return
+    yil = iso_agg.get('yil', '')
+    headers = ['İSO Genel Sıra', 'Sektör Sıra', 'Kuruluş Adı',
+               f'Üretimden Satışlar (Bin TL, {yil})']
+    tbl = doc.add_table(rows=1, cols=len(headers))
+    tbl.alignment = 1
+    tbl.autofit = True
+
+    # Başlık satırı
+    for ci, h in enumerate(headers):
+        c = tbl.rows[0].cells[ci]
+        c.text = ''
+        p = c.paragraphs[0]; p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        _run(p, h, bold=True, size_pt=8, color=CLR_WHITE)
+        _set_cell_fill(c, CLR_HEADER_BG)
+
+    # Satırlar
+    for i, t in enumerate(top, 1):
+        row = tbl.add_row().cells
+        vals = [
+            str(t.get('sira') or '—'),
+            str(i),
+            str(t.get('firma') or ''),
+            f"{(t.get('uretim_satis') or 0)/1000:,.0f}".replace(',', '.'),
+        ]
+        aligns = [WD_ALIGN_PARAGRAPH.CENTER, WD_ALIGN_PARAGRAPH.CENTER,
+                  WD_ALIGN_PARAGRAPH.LEFT, WD_ALIGN_PARAGRAPH.RIGHT]
+        for ci, (v, al) in enumerate(zip(vals, aligns)):
+            c = row[ci]; c.text = ''
+            p = c.paragraphs[0]; p.alignment = al
+            _run(p, v, size_pt=8, color=CLR_BODY)
+            if i % 2 == 0:
+                _set_cell_fill(c, CLR_PANEL)
+
+    # İnce kenarlıklar
+    _table_borders(tbl)
+    return tbl
+
+def _table_borders(tbl, color='BFBFBF', sz='4'):
+    tblPr = tbl._tbl.tblPr
+    borders = OxmlElement('w:tblBorders')
+    for edge in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):
+        el = OxmlElement(f'w:{edge}')
+        el.set(qn('w:val'), 'single'); el.set(qn('w:sz'), sz)
+        el.set(qn('w:space'), '0'); el.set(qn('w:color'), color)
+        borders.append(el)
+    tblPr.append(borders)
+
 # ─── LLM ANALIZ BLOGU ─────────────────────────────────────────────────────────
 def parse_llm_sections(text):
     """
@@ -241,42 +297,30 @@ def build_word_report(nace, fig1, fig2, fig3, fig4, fig5,
 
     doc = Document()
 
-    # ─── Sayfa yapisi: A4 dar kenar bosluk ───────────────────────────────────
+    # ─── Sayfa yapisi: A4, 2.54 cm (1 inç) kenar boşluk — örnek belgeyle aynı ──
     sec = doc.sections[0]
     sec.page_height = Cm(29.7)
     sec.page_width  = Cm(21.0)
-    sec.top_margin    = Cm(1.5)
-    sec.bottom_margin = Cm(1.5)
-    sec.left_margin   = Cm(2.0)
-    sec.right_margin  = Cm(2.0)
+    sec.top_margin    = Cm(2.54)
+    sec.bottom_margin = Cm(2.54)
+    sec.left_margin   = Cm(2.54)
+    sec.right_margin  = Cm(2.54)
 
     # Varsayilan paragraf fontu
     style = doc.styles['Normal']
     style.font.name = ARIAL
     style.font.size = Pt(10)
 
-    # ─── ANA BASLIK ──────────────────────────────────────────────────────────
-    hdr = _heading_para(doc, 'SEKTÖREL ARAŞTIRMALAR')
-    hdr.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    # ─── ANA BASLIK (örnek belge: ortalı "Sektörel Araştırmalar" + sektör adı) ──
+    t1 = doc.add_paragraph()
+    _para_spacing(t1, before=0, after=40)
+    t1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(t1, 'Sektörel Araştırmalar', bold=True, size_pt=13, color=CLR_BODY)
 
-    _blank(doc, 2)
-
-    # Alt baslik: Sektor adi
-    sub = doc.add_paragraph()
-    _para_spacing(sub, before=60, after=60)
-    _run(sub, f'{nace} — {sector}', bold=True, size_pt=12, color=CLR_HEADER_BG)
-    sub.alignment = WD_ALIGN_PARAGRAPH.LEFT
-
-    _blank(doc, 4)
-
-    # ─── OZET GOSTERGELER ────────────────────────────────────────────────────
-    _kpi_table(doc, fig1, fig3, fig4, fig5)
-    _blank(doc, 6)
-
-    # ─── BOLUM BASLIGI ───────────────────────────────────────────────────────
-    sec_hdr = _heading_para(doc, 'SEKTÖRE İLİŞKİN DEĞERLENDİRMELER')
-
-    _blank(doc, 4)
+    t2 = doc.add_paragraph()
+    _para_spacing(t2, before=0, after=160)
+    t2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(t2, f'{sector} Sektörü', bold=True, size_pt=12, color=CLR_BODY)
 
     # ─── LLM Analiz metnini parse et ─────────────────────────────────────────
     if analysis_text:
@@ -284,16 +328,13 @@ def build_word_report(nace, fig1, fig2, fig3, fig4, fig5,
     else:
         sections = {}
 
-    # GİRİŞ paragrafı
+    # GİRİŞ paragrafı (iki yana yaslı, akıcı)
     giris = sections.get('GIRIS', '').strip()
     if giris:
-        for para_text in giris.split('\n\n'):
+        for para_text in giris.split('\n'):
             para_text = para_text.strip()
-            if not para_text: continue
-            p = doc.add_paragraph()
-            _para_spacing(p, before=0, after=80)
-            _run(p, para_text, size_pt=10)
-        _blank(doc, 4)
+            if para_text:
+                _yorum_para(doc, para_text)
 
     # ─── ŞEKİL BLOKLARI ───────────────────────────────────────────────────────
     is_toplam = (nace == TOTAL_MANUFACTURING)
@@ -303,15 +344,15 @@ def build_word_report(nace, fig1, fig2, fig3, fig4, fig5,
                      else 'Kaynak: TÜİK – Sanayi Üretim Endeksi, Sınıf Düzeyi')
 
     sekil_defs = [
-        ('sekil1', 'Şekil 1', f'{sector} Üretim Endeksi (Önceki Yıla Göre Değişim, %)',
-         'Kaynak: TÜİK – Sanayi Üretim Endeksi (Mevsim ve Takvim Etkisinden Arındırılmış)'),
-        ('sekil2', 'Şekil 2', sekil2_title, sekil2_kaynak),
-        ('sekil3', 'Şekil 3', f'{sector} Dış Ticaret Endeksi (Önceki Yıla Göre Değişim, %)',
-         f'Kaynak: TÜİK – Dış Ticaret (Takvim Etk. Arındırılmış) | SITC {SITC_MAP.get(nace,"T")}'),
-        ('sekil4', 'Şekil 4', f'Kapasite Kullanım Oranı (%)',
-         'Kaynak: TCMB EVDS – İmalat Sanayi Kapasite Kullanım Oranı (NACE Rev.2)'),
-        ('sekil5', 'Şekil 5', f'ÜFE Değişimi – {sector} Yıllık %',
-         'Kaynak: TÜİK – Üretici Fiyat Endeksi (ÜFE)'),
+        ('sekil1', 'Şekil 1', f'{sector} Sanayi Üretim Endeksi (Önceki Yıla Göre Değişim, %)',
+         'Kaynak: Türkiye İstatistik Kurumu (TÜİK)'),
+        ('sekil2', 'Şekil 2', sekil2_title, 'Kaynak: TÜİK'),
+        ('sekil3', 'Şekil 3', f'{sector} Sektörü Dış Ticaret Verileri (Önceki Yıla Göre Değişim, %)',
+         'Kaynak: TÜİK'),
+        ('sekil4', 'Şekil 4', 'Kapasite Kullanım Oranı (Yıllıklandırılmış, %)',
+         'Kaynak: Türkiye Cumhuriyet Merkez Bankası (TCMB)'),
+        ('sekil5', 'Şekil 5', 'Üretici Fiyat Endeksi Değişimi – Yıllık %',
+         'Kaynak: TÜİK'),
     ]
     fig_data = [fig1, fig2, fig3, fig4, fig5]
     sekil_keys = ['SEKIL1', 'SEKIL2', 'SEKIL3', 'SEKIL4', 'SEKIL5']
@@ -320,7 +361,7 @@ def build_word_report(nace, fig1, fig2, fig3, fig4, fig5,
         if not fig_d and not chart_paths.get(key):
             continue
 
-        # Sekil baslik
+        # Sekil baslik (kalın siyah, ortalı)
         _sekil_title(doc, f'{s_no}: {title}')
 
         # Grafik
@@ -328,58 +369,63 @@ def build_word_report(nace, fig1, fig2, fig3, fig4, fig5,
         if img and os.path.exists(img):
             _add_image(doc, img, width_cm=15.5)
 
-        # Kaynak
+        # Kaynak (ortalı, 8pt)
         _kaynak_line(doc, kaynak)
 
-        # Maddeler
-        bullet_text = sections.get(skey, '')
-        for b in bullets_from_text(bullet_text):
-            _bullet(doc, b)
+        # Yorum — akıcı paragraf (iki yana yaslı)
+        yorum = sections.get(skey, '').strip()
+        if yorum:
+            for para_text in yorum.split('\n'):
+                if para_text.strip():
+                    _yorum_para(doc, para_text)
 
-        _blank(doc, 6)
-
-    # ─── ŞEKİL 6: İSO 500 ────────────────────────────────────────────────────
-    if iso_agg and chart_paths.get('sekil6'):
+    # ─── SEKTÖRÜN KURUMSAL GÖRÜNÜMÜ (İSO 500) ────────────────────────────────
+    if iso_agg:
         yil = iso_agg.get('yil', '')
-        _sekil_title(doc, f"Şekil 6: İSO 500 & İkinci 500'de {sector} — "
-                          f"İlk 10 Kuruluş (Üretimden Satışlar, Milyar TL, {yil})")
-        img = chart_paths.get('sekil6')
-        if img and os.path.exists(img):
-            _add_image(doc, img, width_cm=15.5)
-        _kaynak_line(doc, f'Kaynak: İstanbul Sanayi Odası — Türkiye\'nin 500 Büyük '
-                          f'Sanayi Kuruluşu ve İkinci 500 ({yil})')
+        # Bölüm başlığı (örnek belgedeki "Firmanın Sektördeki Konumu" muadili)
+        bh = doc.add_paragraph()
+        _para_spacing(bh, before=160, after=100)
+        bh.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        _run(bh, 'Sektörün İSO 500 İçindeki Konumu', bold=True, size_pt=11, color=CLR_BODY)
 
-        # LLM yorumu varsa onu, yoksa deterministik veri maddeleri
-        iso_llm = sections.get('SEKIL6', '')
-        if iso_llm.strip():
-            for b in bullets_from_text(iso_llm):
-                _bullet(doc, b)
+        # Yorum paragrafı
+        iso_llm = sections.get('SEKIL6', '').strip()
+        if iso_llm:
+            for pt in iso_llm.split('\n'):
+                if pt.strip(): _yorum_para(doc, pt)
         else:
-            _bullet(doc, f"Sektörden {iso_agg['firma_sayisi']} kuruluş listede yer aldı "
-                         f"(İSO 500: {iso_agg['firma_500']}, İkinci 500: {iso_agg['firma_2_500']}).")
-            _bullet(doc, f"Toplam üretimden satışlar {iso_agg['toplam_uretim_satis']/1e9:.1f} milyar TL; "
-                         f"toplam ihracat {iso_agg['toplam_ihracat_musd']:.0f} milyon $ düzeyinde gerçekleşti.")
-            _bullet(doc, f"Listedeki kuruluşların toplam istihdamı {iso_agg['toplam_calisan']:,.0f} kişidir."
-                         .replace(',', '.'))
-            if iso_agg.get('favok_marj_med') is not None:
-                _bullet(doc, f"Medyan FAVÖK marjı %{iso_agg['favok_marj_med']:.1f} olarak hesaplanmıştır.")
-            if iso_agg.get('yoy') and iso_agg['yoy'].get('uretim_satis') is not None:
-                y = iso_agg['yoy']
-                _bullet(doc, f"İSO 500'deki sektör kuruluşlarının üretimden satışları "
-                             f"{y['donem']} döneminde nominal %{y['uretim_satis']:+.1f} değişim gösterdi.")
+            _yorum_para(doc,
+                f"Türkiye'nin en büyük sanayi kuruluşlarını kapsayan İSO 500 ve İkinci 500 "
+                f"listelerinde {sector} sektöründen {yil} yılında {iso_agg['firma_sayisi']} "
+                f"kuruluş yer almıştır (İSO 500: {iso_agg['firma_500']}, İkinci 500: "
+                f"{iso_agg['firma_2_500']}). Bu kuruluşların toplam üretimden satışları "
+                f"{iso_agg['toplam_uretim_satis']/1e9:.1f} milyar TL, toplam ihracatı ise "
+                f"{iso_agg['toplam_ihracat_musd']:.0f} milyon dolar düzeyinde gerçekleşmiştir." +
+                (f" Sektörün medyan FAVÖK marjı %{iso_agg['favok_marj_med']:.1f} olarak "
+                 f"hesaplanmıştır." if iso_agg.get('favok_marj_med') is not None else ""))
+
+        # Grafik (İlk 10 kuruluş)
+        if chart_paths.get('sekil6'):
+            _sekil_title(doc, f"Şekil 6: {sector} Sektöründe İlk 10 Kuruluş "
+                              f"(Üretimden Satışlar, Milyar TL, {yil})")
+            _add_image(doc, chart_paths['sekil6'], width_cm=15.5)
+            _kaynak_line(doc, 'Kaynak: İstanbul Sanayi Odası (İSO 500 ve İkinci 500)')
+
+        # Firma tablosu (örnek belgedeki İSO tablosu muadili)
+        _iso_table(doc, iso_agg)
         _blank(doc, 6)
 
     # ─── SEKTÖREL BEKLENTİLER VE RİSK ANALİZİ (haber sentezi) ────────────────
     if news_analysis and news_analysis.strip():
         _blank(doc, 6)
-        _heading_para(doc, 'SEKTÖREL BEKLENTİLER VE RİSK ANALİZİ')
-        _blank(doc, 4)
+        bh = doc.add_paragraph()
+        _para_spacing(bh, before=120, after=100)
+        _run(bh, 'Sektörel Beklentiler ve Risk Analizi', bold=True, size_pt=11, color=CLR_BODY)
         for b in bullets_from_text(news_analysis):
-            _bullet(doc, b)
+            _yorum_para(doc, b)
         _kaynak_line(doc,
-            f'Kaynak: Google News sektör taraması ve yapay zekâ sentezi — '
-            f'{datetime.now().strftime("%d.%m.%Y")} · '
-            f'Görüşler yatırım tavsiyesi değildir.')
+            f'Kaynak: Güncel haber taraması ve yapay zekâ sentezi ('
+            f'{datetime.now().strftime("%d.%m.%Y")}). Görüşler yatırım tavsiyesi değildir.')
         _blank(doc, 4)
 
     # ─── RAPOR ALT BİLGİSİ ───────────────────────────────────────────────────

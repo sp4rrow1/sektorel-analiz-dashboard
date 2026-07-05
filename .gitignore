@@ -9,3 +9,4 @@ tuik_nace14_excel.py
 test_llm.py
 *.docx
 _charts_preview/
+_wtest/

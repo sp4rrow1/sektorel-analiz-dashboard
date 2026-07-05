@@ -328,6 +328,10 @@ button[kind="header"], [data-testid="stSidebarCollapsedControl"],
   background:rgba(37,99,235,.035); border-left:3px solid var(--brand);
   padding:.7rem .95rem; border-radius:0 8px 8px 0; margin-bottom:.4rem;
 }}
+.report .r-para {{
+  font-size:.9rem; line-height:1.8; color:var(--ink-soft);
+  text-align:justify; margin:.1rem 0 .3rem 0;
+}}
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 [data-testid="stSidebar"] {{
@@ -2036,15 +2040,12 @@ if "rapor_text" in st.session_state and st.session_state.get("rapor_nace") == na
     for tag, tl in labels.items():
         text = secs.get(tag, "")
         if not text or not text.strip(): continue
+        paras = [p for p in re.split(r'\n+', text) if p.strip()]
+        body = "<br>".join(_clean_inline(p) for p in paras)
         if tag == "GIRIS":
-            paras = [p for p in text.split("\n") if p.strip()]
-            body = "<br>".join(_clean_inline(p) for p in paras)
             html += f'<div class="r-head">{tl}</div><div class="r-intro">{body}</div>'
         else:
-            bl = bullets_from_text(text)
-            if not bl: continue
-            items = "".join(f"<li>{_clean_inline(b)}</li>" for b in bl)
-            html += f'<div class="r-head">{tl}</div><ul>{items}</ul>'
+            html += f'<div class="r-head">{tl}</div><p class="r-para">{body}</p>'
         any_section = True
     if any_section:
         st.markdown(f'<div class="report">{html}</div>', unsafe_allow_html=True)

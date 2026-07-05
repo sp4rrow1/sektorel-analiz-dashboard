@@ -74,12 +74,20 @@ def summarize_data(nace, fig1, fig2, fig3, fig4, fig5):
     return '\n'.join(lines)
 
 
-SYSTEM_PROMPT = """Sen Türkiye'nin önde gelen bir bankasının sektörel araştırma biriminde
-çalışan kıdemli bir ekonomistsin. Sektör raporlarını kısa, veri odaklı ve
-profesyonel biçimde yazarsın. Dil tonu resmi Türkçedir. Yorumlarında daima
-somut sayısal değerlere atıf yaparsın (örn. "%5,8 azalış", "12,9 milyar dolar",
-"2025 yılı genelinde..."). Paragraf veya bölüm başlıkları KULLANMAZSIN; bunun
-yerine madde işaretli (-) satırlarla yazarsın."""
+SYSTEM_PROMPT = """Sen Türkiye'nin önde gelen bir kalkınma ve yatırım bankasının Sektörel
+Araştırmalar biriminde çalışan kıdemli bir ekonomistsin. Bankacılık standardında,
+resmi ve akıcı Türkçe ile sektör raporları yazarsın.
+
+YAZIM KURALLARI (kesinlikle uy):
+- Madde işareti (-) KULLANMA. Her bölümü AKICI PARAGRAF olarak yaz (2-4 cümle).
+- Sayıları Türkçe biçimde yaz: ondalık ayırıcı VİRGÜL (%3,4 — %3.4 DEĞİL),
+  binlik ayırıcı nokta (17.782). Yüzde işareti sayıdan önce (%12,1).
+- Somut değerlere daima atıf yap; hem yıllık (ör. "2025 yılında") hem son ay
+  (ör. "2026 Mart ayında") karşılaştırması ver.
+- Tipik kalıpları kullan: "... bir önceki yıla göre %X oranında artış/azalış
+  kaydetmiştir", "... geçen yılın aynı ayına göre %Y arttığı gözlemlenmektedir",
+  "... düzeyinde gerçekleşmiştir", "... paralel seyretmektedir".
+- Abartısız, olgusal, rasyonel. Başlık, etiket, markdown yıldızı KULLANMA."""
 
 
 def _derived_metrics_text(fig1, fig5, fig6, fig7):
@@ -143,47 +151,65 @@ def generate_analysis(nace, fig1, fig2, fig3, fig4, fig5, iso_agg=None,
         except Exception:
             pass
 
-    madde_adet = "1-2 madde" if kisa else "2-3 madde"
-    giris_cumle = "1-2 cümleyle" if kisa else "2-3 cümleyle"
+    uzunluk = "1-2 cümlelik kısa" if kisa else "2-4 cümlelik"
 
-    prompt = f"""Aşağıdaki TÜİK ve TCMB verileri kullanılarak {nace} - {sector} sektörü için
-kısa ve veri odaklı bir sektörel araştırma raporu yaz.
+    prompt = f"""Aşağıdaki TÜİK, TCMB ve İSO verileriyle {nace} - {sector} sektörü için
+banka Sektörel Araştırmalar birimi standardında bir rapor yaz.
 
 {ozet}
 {iso_blok}
 
-Yanıtını SADECE aşağıdaki etiketleri kullanarak yaz (başka hiçbir başlık ya da # işareti koyma):
+BİÇİM: Yanıtını SADECE aşağıdaki etiketlerle ver. Her etiketin altına, madde
+işareti KULLANMADAN, {uzunluk} AKICI BİR PARAGRAF yaz. Sayılarda ondalık ayırıcı
+virgül (%3,4), yüzde işareti önde. Örnek üsluba birebir uy.
 
 [GIRIS]
-Sektörün genel durumunu ve son dönem performansını {giris_cumle} özetle.
-Raporun bütününe giriş niteliğinde, veri atıflı paragraf.
+Sektörün stratejik rolünü ve genel görünümünü tanıtan giriş paragrafı.
+(Örnek üslup: "Türkiye'de {sector.lower()} sektörü, ... kritik bir rol
+oynamaktadır. Sektörün mevcut durumuna ilişkin analizimiz ve temel göstergeler
+aşağıda yer almaktadır.")
 
 [SEKIL1]
-- (üretim endeksi için {madde_adet}, somut % değerleriyle)
+Üretim endeksi paragrafı. (Örnek üslup: "... sektörü üretimi 2025 yılında bir
+önceki yıla göre %X oranında artış kaydetmiştir. 2026 yılı ... ayında ise üretimin
+geçen yılın aynı ayına göre %Y arttığı gözlemlenmektedir.")
 
 [SEKIL2]
-- (alt kırılımlar için {madde_adet})
+Alt kırılımlar paragrafı. En yüksek/düşük artış gösteren alt sektörleri isim ve
+yüzdeyle belirt. (Örnek üslup: "Seçili alt sektörler incelendiğinde, 2025 yılında
+en yüksek artış %X ile '...' alt sektöründe gerçekleşmiştir.")
 
 [SEKIL3]
-- (ihracat ve ithalat için {madde_adet}, dolar değerleri varsa belirt)
+Dış ticaret paragrafı. İhracat ve ithalatın yıllık değişimini, mümkünse dolar
+büyüklüğünü ve dış ticaret dengesini (fazla/açık) yorumla. (Örnek üslup:
+"... 2025 yılında yapılan ihracat %X, ithalat ise %Y oranında artış göstermiştir.
+2026 ... döneminde ihracatın %Z arttığı, ithalatın ise %W azaldığı görülmektedir.")
 
 [SEKIL4]
-- (KKO için {madde_adet}, imalat ortalamasıyla karşılaştır)
+Kapasite kullanım oranı paragrafı. Sektörü imalat sanayii ortalamasıyla ve tarihsel
+ortalamayla karşılaştır. (Örnek üslup: "... döneminde ortalama kapasite kullanım
+oranı imalat sanayiinde %X, ... sektöründe %Y olarak gerçekleşmiştir. ... itibarıyla
+... sektöründe kapasite kullanım oranı %Z düzeyinde gerçekleşmiştir.")
 
 [SEKIL5]
-- (ÜFE için {madde_adet}, maliyet baskısını yorumla; varsa REEL CİRO türev metriğine
-  atıf yap — nominal büyümenin enflasyondan arındırılmış gerçek anlamını vurgula)
+ÜFE paragrafı. Sektör ÜFE'sini imalat ÜFE'siyle karşılaştır; varsa reel ciro
+etkisine değin. (Örnek üslup: "... ÜFE'si imalat ÜFE'si ile paralel seyretmektedir.
+... ayında söz konusu alt endeks değişimi %X, imalat ÜFE değişimi ise %Y düzeyindedir.")
 {f'''
 [SEKIL6]
-- (İSO 500/İkinci 500 verileri için {madde_adet}: firma sayısı, satış-ihracat büyüklüğü,
-  kârlılık ve yoğunlaşma; kurumsal yatırımcı bakışıyla yorumla)
+İSO 500/İkinci 500 kurumsal görünüm paragrafı. Sektörden listeye giren firma sayısı,
+toplam üretimden satışlar ve ihracat büyüklüğü, kârlılık ve yoğunlaşmayı kurumsal
+yatırımcı bakışıyla değerlendir.
 ''' if iso_agg else ''}
-Her madde TEK SATIR olsun, '-' ile başlasın. Markdown yıldızı (**) KULLANMA.
-Resmi Türkçe kullan, sayısal değerler zorunlu. Sadece istenen etiketleri döndür."""
+Sadece istenen etiketleri döndür. Madde işareti ve markdown yıldızı (**) yasak."""
 
-    # Yanit en az GIRIS + birkaç bölüm içermeli; kısa/eksik cevaplar elenip sonraki key denenir
+    # Yanit yeterli DOLU bölüm içermeli; boş/eksik cevaplar elenip sonraki key denenir
     def _valid(t):
-        return len(t) >= 350 and t.count('[') >= 3
+        if len(t) < 400:
+            return False
+        parts = re.split(r'\[[A-Z0-9]+\]', t)
+        filled = sum(1 for p in parts if len(p.strip()) > 40)
+        return filled >= 4
     return call_llm(prompt, system=SYSTEM_PROMPT,
                     max_tokens=(1200 if kisa else 2000), validate=_valid)
 

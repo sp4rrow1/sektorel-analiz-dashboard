@@ -18,26 +18,27 @@ import matplotlib.patches as mpatches
 from matplotlib.lines import Line2D
 import numpy as np
 
-# ─── TASARIM SABITLERI ────────────────────────────────────────────────────────
-BRAND    = '#2563EB'
-BRAND_DK = '#1D4ED8'
-NAVY     = '#1E3A5F'
-SKY      = '#0EA5E9'
-TEAL     = '#0D9488'
-AMBER    = '#F59E0B'
-POS      = '#059669'
-NEG      = '#DC2626'
-INK      = '#0F1729'
-INK_SOFT = '#334155'
-MUTED    = '#64748B'
-LINE_CLR = '#E2E8F0'
-GRID_CLR = '#EDF1F6'
+# ─── TASARIM SABITLERI (örnek Borsan raporu paleti) ──────────────────────────
+BRAND    = '#0070C0'   # örnek belgedeki ana mavi (çizgi/çubuk)
+BRAND_DK = '#002060'   # koyu lacivert (ihracat)
+NAVY     = '#002060'
+SKY      = '#0070C0'
+TEAL     = '#00538F'
+AMBER    = '#8895B6'
+POS      = '#00538F'
+NEG      = '#C00000'
+INK      = '#000000'
+INK_SOFT = '#333333'
+MUTED    = '#595959'
+LINE_CLR = '#D9D9D9'
+GRID_CLR = '#E7E6E6'
 
-SERIES_PAL = [BRAND, '#7C3AED', SKY, TEAL, AMBER, '#DB2777', NAVY]
-# Yillik bar gradyani: gecmis soluk → son yil marka
-BAR_FADE   = ['#B7C3D7', '#8FA8CF', '#5C85D6', BRAND]
-TRADE_EXP  = BRAND_DK
-TRADE_IMP  = '#94A3B8'
+# Çok serili gerektiğinde: mavi tonları + gri
+SERIES_PAL = ['#0070C0', '#002060', '#8895B6', '#00538F', '#5B9BD5', '#7F7F7F', '#333333']
+# Yillik bar gradyani: gecmis soluk gri → son yil mavi (örnek belge tarzı)
+BAR_FADE   = ['#BFBFBF', '#A6A6A6', '#7F9FBF', BRAND]
+TRADE_EXP  = '#002060'   # İhracat — koyu lacivert
+TRADE_IMP  = '#8895B6'   # İthalat — gri-mavi
 
 FONT     = 'Arial'
 LABEL_PT = 8
