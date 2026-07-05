@@ -23,7 +23,11 @@ st.set_page_config(
 # ════════════════════════════════════════════════════════════════════════════════
 # Streamlit Cloud'da Advanced settings > Secrets içine APP_PASSWORD = "..." ekleyerek
 # değiştirilebilir. Secret tanımlı değilse varsayılan "1" kullanılır.
-_APP_PASSWORD = st.secrets.get("APP_PASSWORD", "1") if hasattr(st, "secrets") else "1"
+try:
+    _APP_PASSWORD = st.secrets.get("APP_PASSWORD", "1")
+except Exception:
+    # secrets.toml yoksa st.secrets erişimi hata fırlatır → varsayılana düş
+    _APP_PASSWORD = "1"
 
 if not st.session_state.get("_authed", False):
     st.markdown("""
