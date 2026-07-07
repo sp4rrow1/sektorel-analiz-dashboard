@@ -245,19 +245,36 @@ if __name__ == "__main__":
     print(f"Donem: {START} - {END}")
     print("=" * 60)
 
-    cache = {}
     t0 = datetime.now()
 
-    cache['alt_c']       = fetch_alt_c()
-    cache['ana_c']       = fetch_ana_c()
-    cache['sinif_o']     = fetch_sinif_o()
-    cache['ufe']         = fetch_ufe()
-    cache['dis_ticaret'] = fetch_dis_ticaret()
-    cache['kko']         = fetch_kko()
-    cache['ciro']        = fetch_ciro()
-    cache['ucretli']     = fetch_ucretli()
-    cache['redk']        = fetch_redk()
-    cache['iya']         = fetch_iya()
+    cache = {}
+    if os.path.exists(CACHE_FILE):
+        try:
+            with open(CACHE_FILE, 'rb') as f:
+                cache = pickle.load(f)
+            print("Mevcut cache yüklendi. Hatalı sorgularda eski veri korunacak.")
+        except Exception as e:
+            print(f"Eski cache okunamadı: {e}")
+
+    def safe_run(key, func):
+        try:
+            res = func()
+            if res:
+                cache[key] = res
+        except Exception as e:
+            print(f"   [HATA] {key} güncellenemedi: {e}")
+
+    safe_run('alt_c', fetch_alt_c)
+    safe_run('ana_c', fetch_ana_c)
+    safe_run('sinif_o', fetch_sinif_o)
+    safe_run('ufe', fetch_ufe)
+    safe_run('dis_ticaret', fetch_dis_ticaret)
+    safe_run('kko', fetch_kko)
+    safe_run('ciro', fetch_ciro)
+    safe_run('ucretli', fetch_ucretli)
+    safe_run('redk', fetch_redk)
+    safe_run('iya', fetch_iya)
+
     cache['meta']        = {
         'created_at': datetime.now().isoformat(),
         'start':      START,
