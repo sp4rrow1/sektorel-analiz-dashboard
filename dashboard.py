@@ -74,6 +74,7 @@ AMBER      = "#F59E0B"
 
 POS        = "#059669"
 NEG        = "#DC2626"
+ROSE       = "#F43F5E"
 
 SERIES_PAL = [BRAND, "#7C3AED", SKY, TEAL, AMBER, "#DB2777", NAVY]
 YEAR_PAL   = ["#BFDBFE", "#93C5FD", "#60A5FA", "#3B82F6", "#2563EB", "#1D4ED8"]
@@ -86,7 +87,7 @@ FONT = ("-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "
 # ─── CSS ────────────────────────────────────────────────────────────────────────
 st.markdown(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&display=swap');
 
 :root {{
   --ink:{INK}; --ink-soft:{INK_SOFT}; --muted:{MUTED};
@@ -95,7 +96,7 @@ st.markdown(f"""
 }}
 
 html, body, [class*="css"], .stApp {{
-  font-family: 'Inter', {FONT};
+  font-family: 'Outfit', 'Inter', {FONT};
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -213,13 +214,13 @@ button[kind="header"], [data-testid="stSidebarCollapsedControl"],
   border:1px solid var(--line);
   border-radius:16px; padding:1rem 1.15rem .95rem 1.25rem;
   position:relative; overflow:hidden; height:100%;
-  box-shadow: 0 1px 2px rgba(15,23,41,.04), 0 8px 18px -16px rgba(15,23,41,.15);
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05);
   transition: transform .22s cubic-bezier(.2,.7,.3,1),
               box-shadow .22s ease, border-color .22s ease;
 }}
 .kpi:hover {{
   transform:translateY(-4px);
-  box-shadow:0 16px 34px -16px rgba(15,23,41,.28);
+  box-shadow:0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1);
   border-color:#D3DEEC;
 }}
 /* renkli, parıltılı vurgu çubuğu */
@@ -335,7 +336,7 @@ button[kind="header"], [data-testid="stSidebarCollapsedControl"],
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 [data-testid="stSidebar"] {{
-  background: linear-gradient(180deg, {PANEL} 0%, #F4F7FB 100%);
+  background: rgba(248,250,252,0.65); backdrop-filter: blur(24px);
   border-right: 1px solid var(--line);
   box-shadow: 1px 0 0 rgba(15,23,41,.02);
   min-width: 320px !important;
@@ -496,25 +497,22 @@ hr {{ border-color:var(--line); margin:1.5rem 0; }}
 # ─── PLOTLY TEMASI ───────────────────────────────────────────────────────────────
 pio.templates["tuik"] = go.layout.Template(
     layout=dict(
-        font=dict(family="Inter, sans-serif", size=12, color=INK_SOFT),
+        font=dict(family="Outfit, Inter, sans-serif", size=13, color=INK_SOFT),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         colorway=SERIES_PAL,
-        margin=dict(l=8, r=70, t=8, b=40),
-        hoverlabel=dict(bgcolor=WHITE, bordercolor=LINE,
-                        font=dict(family="Inter, sans-serif", size=12, color=INK)),
+        margin=dict(l=16, r=80, t=24, b=45),
+        hoverlabel=dict(bgcolor="rgba(255,255,255,0.95)", bordercolor=LINE,
+                        font=dict(family="Inter, sans-serif", size=14, color=INK)),
         hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.03, xanchor="left", x=0,
-                    font=dict(size=11, color=INK_SOFT), bgcolor="rgba(0,0,0,0)",
-                    itemwidth=30),
-        xaxis=dict(showgrid=False, showline=True, linecolor=LINE, linewidth=1,
-                   ticks="outside", tickcolor=LINE, ticklen=4,
-                   tickfont=dict(size=10.5, color=MUTED)),
-        # hoverformat: unified hover'da %{y} her zaman 1 ondalıkla gösterilir
-        # (ham "-2.514302288475" gibi uzun değerleri engeller)
-        yaxis=dict(showgrid=True, gridcolor="#EDF1F6", griddash="dot",
-                   zeroline=True, zerolinecolor="#CBD5E1", zerolinewidth=1.2,
-                   tickfont=dict(size=10.5, color=MUTED), hoverformat=".1f"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="left", x=0,
+                    font=dict(size=12, color=INK_SOFT), bgcolor="rgba(0,0,0,0)", itemwidth=30),
+        xaxis=dict(showgrid=False, showline=True, linecolor=LINE, linewidth=1.5,
+                   ticks="outside", tickcolor=LINE, ticklen=6,
+                   tickfont=dict(size=12, color=MUTED)),
+        yaxis=dict(showgrid=True, gridcolor="#E2E8F0", griddash="solid",
+                   zeroline=True, zerolinecolor="#94A3B8", zerolinewidth=1.5,
+                   tickfont=dict(size=12, color=MUTED), hoverformat=".1f"),
     )
 )
 LAYOUT   = dict(template="tuik")
@@ -1264,7 +1262,7 @@ with tabs[1]:
                 hovertemplate="%{x}: <b>%{y:.1f}%</b><extra></extra>",
                 width=0.58,
             ))
-            fig.update_layout(**LAYOUT, height=330, bargap=0.3, showlegend=False,
+            fig.update_layout(**LAYOUT, height=430, bargap=0.3, showlegend=False,
                               margin=dict(l=8, r=8, t=24, b=36))
             fig.update_yaxes(visible=False)
             fig.add_hline(y=0, line_width=1, line_color="#CBD5E1")
@@ -1282,7 +1280,22 @@ with tabs[1]:
                     x=xs, y=ys, mode="lines", name=disp,
                     line=dict(color=col, width=2, shape="spline", smoothing=.8),
                     hovertemplate="<b>%{y:.1f}%</b><extra>" + disp[:26] + "</extra>"))
-                if xs: _ends.append((xs[-1], ys[-1], col, "{:+.1f}%"))
+    
+            if xs: _ends.append((xs[-1], ys[-1], col, "{:+.1f}%"))
+
+        if compare_nace:
+            f7_cmp = build_sekil7(compare_nace, cache.get("ucretli", []))
+            if f7_cmp:
+                for lbl, s in f7_cmp.items():
+                    if compare_nace in lbl:
+                        cx, cy = series_xy(s, ay_sayisi)
+                        if cx:
+                            fig.add_trace(go.Scatter(
+                                x=cx, y=cy, mode="lines", name=f"⚖ {compare_nace} İstihdam",
+                                line=dict(color=ROSE, width=2.4, dash="dashdot", shape="spline", smoothing=.8),
+                                hovertemplate="<b>%{y:+.2f}%</b><extra>Kıyas: " + compare_nace + "</extra>"))
+                            _ends.append((cx[-1], cy[-1], ROSE, "{:+.1f}%"))
+
 
             if compare_nace:
                 f1_cmp = build_sekil1(compare_nace, cache["alt_c"], ana_c_series=_ana_c)
@@ -1301,7 +1314,7 @@ with tabs[1]:
                     if xs_c: _ends.append((xs_c[-1], ys_c[-1], INK_SOFT, "{:+.1f}%"))
             add_end_labels(fig2, _ends)
 
-            fig2.update_layout(**LAYOUT, height=360,
+            fig2.update_layout(**LAYOUT, height=450,
                                margin=dict(l=8, r=64, t=8, b=64),
                                legend=dict(orientation="h", y=-0.28, x=0, font=dict(size=10)))
             fig2.update_xaxes(dtick=6)
@@ -1441,7 +1454,7 @@ with tabs[2]:
                                 hovertemplate="<b>%{y:+.1f}%</b><extra>Kıyas: " + compare_nace + "</extra>"))
             
             add_end_labels(fig, _ends)
-            fig.update_layout(**LAYOUT, height=360)
+            fig.update_layout(**LAYOUT, height=450)
             fig.update_xaxes(dtick=6)
             fig.update_yaxes(ticksuffix="%")
             fig.add_hline(y=0, line_width=1, line_color="#CBD5E1")
@@ -1464,7 +1477,7 @@ with tabs[2]:
                     textposition="outside", cliponaxis=False,
                     textfont=dict(size=10, family="Inter"),
                     hovertemplate="%{y}: <b>%{x:+.1f}%</b><extra></extra>"))
-            fig2.update_layout(**LAYOUT, barmode="group", height=360, bargap=0.25,
+            fig2.update_layout(**LAYOUT, barmode="group", height=450, bargap=0.25,
                                margin=dict(l=8, r=44, t=8, b=36))
             fig2.update_xaxes(ticksuffix="%")
             fig2.update_yaxes(showgrid=False, autorange="reversed")
@@ -1494,7 +1507,7 @@ with tabs[2]:
                 marker_line_width=0,
                 hovertemplate="<b>%{y:+.1f} pn</b><extra>Makas</extra>"
             ))
-            fig_m.update_layout(**LAYOUT, height=220, margin=dict(l=8, r=32, t=8, b=32))
+            fig_m.update_layout(**LAYOUT, height=320, margin=dict(l=8, r=32, t=8, b=32))
             fig_m.update_xaxes(dtick=6)
             fig_m.update_yaxes(ticksuffix=" pn")
             fig_m.add_hline(y=0, line_width=1, line_color="#CBD5E1")
@@ -1535,7 +1548,7 @@ with tabs[2]:
                         ))
 
                 add_end_labels(fig_p, _p_ends)
-                fig_p.update_layout(**LAYOUT, height=320)
+                fig_p.update_layout(**LAYOUT, height=420)
                 fig_p.update_xaxes(dtick=6)
                 fig_p.update_yaxes(ticksuffix="%")
                 fig_p.add_hline(y=0, line_width=1, line_color="#CBD5E1")
@@ -1571,9 +1584,39 @@ with tabs[3]:
                 line=dict(color=col, width=1.8 if is_tot else 2.6,
                           dash="dot" if is_tot else "solid", shape="spline", smoothing=.8),
                 hovertemplate="<b>%{y:.1f}%</b><extra>" + disp_name[:22] + "</extra>"))
+
+
             if xs: _ends.append((xs[-1], ys[-1], col, "{:.1f}%"))
+
+        if compare_nace:
+            f5_cmp = build_sekil5(compare_nace, cache["ufe"])
+            if f5_cmp:
+                for lbl, s in f5_cmp.items():
+                    if compare_nace in lbl:
+                        cx, cy = series_xy(s, ay_sayisi)
+                        if cx:
+                            fig.add_trace(go.Scatter(
+                                x=cx, y=cy, mode="lines", name=f"⚖ {compare_nace} ÜFE",
+                                line=dict(color=AMBER, width=2.4, dash="dashdot", shape="spline", smoothing=.8),
+                                hovertemplate="<b>%{y:.1f}%</b><extra>Kıyas: " + compare_nace + "</extra>"))
+                            _ends.append((cx[-1], cy[-1], AMBER, "{:.1f}%"))
+
+            
+        if compare_nace:
+            f4_cmp = build_sekil4(compare_nace, cache["kko"])
+            if f4_cmp:
+                for lbl, s in f4_cmp.items():
+                    if "anayii" not in lbl:
+                        cx, cy = series_xy(s, ay_sayisi)
+                        if cx:
+                            fig.add_trace(go.Scatter(
+                                x=cx, y=cy, mode="lines", name=f"⚖ {compare_nace} KKO",
+                                line=dict(color=TEAL, width=2.4, dash="dashdot", shape="spline", smoothing=.8),
+                                hovertemplate="<b>%{y:.1f}%</b><extra>Kıyas: " + compare_nace + "</extra>"))
+                            _ends.append((cx[-1], cy[-1], TEAL, "{:.1f}%"))
+
         add_end_labels(fig, _ends, gap_frac=0.06)
-        fig.update_layout(**LAYOUT, height=400)
+        fig.update_layout(**LAYOUT, height=480)
         fig.update_xaxes(dtick=6)
         fig.update_yaxes(ticksuffix="%", range=[lo, hi], zeroline=False)
         st.plotly_chart(fig, use_container_width=True, config=NOBAR)
@@ -1639,7 +1682,7 @@ with tabs[5]:
                     hovertemplate="<b>%{y:+.1f}%</b><extra>" + disp_name[:22] + "</extra>"))
                 if xs: _ends.append((xs[-1], ys[-1], col, "{:+.1f}%"))
             add_end_labels(fig, _ends)
-            fig.update_layout(**LAYOUT, height=360)
+            fig.update_layout(**LAYOUT, height=450)
             fig.update_xaxes(dtick=6)
             fig.update_yaxes(ticksuffix="%")
             fig.add_hline(y=0, line_width=1, line_color="#CBD5E1")
@@ -1661,7 +1704,7 @@ with tabs[5]:
                     textposition="outside", cliponaxis=False,
                     textfont=dict(size=10, family="Inter"),
                     hovertemplate="%{x}: <b>%{y:+.1f}%</b><extra></extra>"))
-            fig2.update_layout(**LAYOUT, barmode="group", height=360, bargap=0.3,
+            fig2.update_layout(**LAYOUT, barmode="group", height=450, bargap=0.3,
                                margin=dict(l=8, r=8, t=24, b=36))
             fig2.update_yaxes(visible=False)
             fig2.add_hline(y=0, line_width=1, line_color="#CBD5E1")
@@ -1692,7 +1735,7 @@ with tabs[6]:
                 hovertemplate="<b>%{y:+.2f}%</b><extra>" + disp_name[:22] + "</extra>"))
             if xs: _ends.append((xs[-1], ys[-1], col, "{:+.1f}%"))
         add_end_labels(fig, _ends)
-        fig.update_layout(**LAYOUT, height=400)
+        fig.update_layout(**LAYOUT, height=480)
         fig.update_xaxes(dtick=6)
         fig.update_yaxes(ticksuffix="%")
         fig.add_hline(y=0, line_width=1, line_color="#CBD5E1")
@@ -2022,7 +2065,7 @@ with tabs[9]:
                 hovertemplate="<b>%{y:+.1f}%</b><extra>Reel</extra>"))
             if xs_r: _ends.append((xs_r[-1], ys_r[-1], BRAND, "{:+.0f}%"))
             add_end_labels(fig, _ends, gap_frac=0.08)
-            fig.update_layout(**LAYOUT, height=360)
+            fig.update_layout(**LAYOUT, height=450)
             fig.update_xaxes(dtick=6)
             fig.update_yaxes(ticksuffix="%")
             fig.add_hline(y=0, line_width=1, line_color="#CBD5E1")
@@ -2054,7 +2097,7 @@ with tabs[9]:
                 text=[f"{v:.1f}" for v in vvals], textposition="outside",
                 cliponaxis=False, textfont=dict(size=11, family="Inter"),
                 hovertemplate="%{y}: <b>σ = %{x:.1f}</b><extra></extra>", width=0.58))
-            fig.update_layout(**LAYOUT, height=360, showlegend=False, hovermode="closest",
+            fig.update_layout(**LAYOUT, height=450, showlegend=False, hovermode="closest",
                               margin=dict(l=8, r=36, t=8, b=30))
             fig.update_xaxes(showticklabels=False, showline=False,
                              range=[0, max(vvals) * 1.35 or 1])
@@ -2134,7 +2177,7 @@ with tabs[9]:
                         x=xs_ulc, y=ys_v, mode="lines", name="Verimlilik",
                         line=dict(color=TEAL, width=1.5, dash="dot", shape="spline", smoothing=.8),
                         hovertemplate="<b>%{y:+.1f}</b><extra>Verimlilik</extra>"))
-            fig_ulc.update_layout(**LAYOUT, height=320)
+            fig_ulc.update_layout(**LAYOUT, height=420)
             fig_ulc.update_xaxes(dtick=6)
             fig_ulc.update_yaxes(ticksuffix=" pn")
             fig_ulc.add_hline(y=0, line_width=1, line_color="#CBD5E1")
@@ -2166,7 +2209,7 @@ with tabs[9]:
                     line=dict(color=AMBER, width=2, dash="dot", shape="spline", smoothing=.8),
                     hovertemplate="<b>%{y:.1f}</b><extra>REDK</extra>"))
                 fig_rd.update_layout(
-                    **LAYOUT, height=320,
+                    **LAYOUT, height=420,
                     yaxis=dict(title=None, ticksuffix="%", side="left"),
                     yaxis2=dict(title=None, overlaying="y", side="right",
                                 showgrid=False, tickfont=dict(size=9, color=AMBER)),
@@ -2198,7 +2241,7 @@ with tabs[9]:
                     x=xs, y=ys, mode="lines", name=label,
                     line=dict(color=cols_iya[idx % len(cols_iya)], width=2.2, shape="spline", smoothing=.8),
                     hovertemplate="<b>%{y:+.1f}</b><extra>" + label + "</extra>"))
-        fig_iya.update_layout(**LAYOUT, height=360, margin=dict(l=8, r=8, t=8, b=30))
+        fig_iya.update_layout(**LAYOUT, height=450, margin=dict(l=8, r=8, t=8, b=30))
         fig_iya.update_xaxes(dtick=6)
         fig_iya.update_yaxes(ticksuffix="")
         fig_iya.add_hline(y=0, line_width=1.5, line_color="#94A3B8")
@@ -2443,7 +2486,7 @@ with tabs[10]:
             "Sektör": nace_name(code) if code in NACE_NAMES else SECTOR_NAMES.get(code, code),
             "SITC Bölüm": SITC_MAP.get(code, "T"),
         })
-    st.dataframe(pd.DataFrame(sitc_rows).set_index("NACE"), use_container_width=True, height=320)
+    st.dataframe(pd.DataFrame(sitc_rows).set_index("NACE"), use_container_width=True, height=420)
     source("Eşleme: 2 haneli NACE Rev.2 → SITC Rev.4 bölüm kodu · T = Toplam dış ticaret")
 
 # ════════════════════════════════════════════════════════════════════════════════
