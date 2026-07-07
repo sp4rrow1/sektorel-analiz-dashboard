@@ -2396,28 +2396,151 @@ with tabs[10]:
                 st.markdown('<div class="src">Gizli (c) beyan edilen ürünler toplama dahil edilmez; '
                             'seriler alt sınır niteliğindedir.</div>', unsafe_allow_html=True)
 
-        with st.expander(f"📋 Tüm ürünler ({f9['urun_sayisi']}) — üretim, satış, girişim, GTİP"):
-            try:
-                from prodtr_data import gtip_for_product
-            except Exception:
-                gtip_for_product = lambda x: []
+        from prodtr_data import (gtip_for_product, product_detail,
+                                  prodtr_for_gtip, search_products)
+
+        st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
+        sub1, sub2, sub3 = st.tabs(["📋  Ürün Tablosu", "🔬  Ürün İncelemesi",
+                                    "🔄  GTİP ↔ PRODTR Dönüştürücü"])
+
+        # ── Alt 1: Aranabilir ürün tablosu ──
+        with sub1:
+            q = st.text_input("Ürün ara", value="",
+                              placeholder="🔍 Ürün adı veya PRODTR kodu (ör. halı, 13.93, dokuma)",
+                              key="prod_search", label_visibility="collapsed")
+            base_rows = (search_products(q, nace=nace) if q.strip()
+                         else sorted(f9["all_rows"], key=lambda x: (x["satis_deger"] or -1), reverse=True))
             rows = []
-            for r in sorted(f9["all_rows"],
-                            key=lambda x: (x["satis_deger"] or -1), reverse=True):
-                gt = gtip_for_product(r["kod"])
+            for r in base_rows:
+                kod = r["kod"]
+                sv = r.get("satis_deger")
+                gt = gtip_for_product(kod)
                 rows.append({
-                    "PRODTR Kodu": r["kod"],
-                    "Ürün": r["tanim"],
-                    "Satış (mlr ₺)": round((r["satis_deger"] or 0)/1e9, 3) if r["satis_deger"] else None,
-                    "Üretim": r["uretim"],
-                    "Birim": r["birim"],
-                    "Girişim": r["girisim"],
-                    "GTİP (örnek)": gt[0] if gt else "",
+                    "PRODTR Kodu": kod,
+                    "Ürün": r.get("tanim", ""),
+                    "Satış (mlr ₺)": round((sv or 0)/1e9, 3) if sv else None,
+                    "Üretim": r.get("uretim"),
+                    "Birim": r.get("birim", ""),
+                    "Girişim": r.get("girisim"),
+                    "GTİP sayısı": len(gt),
                 })
+            st.caption(f"{len(rows)} ürün gösteriliyor" + (f" · '{q}' araması" if q.strip() else ""))
             st.dataframe(pd.DataFrame(rows).set_index("PRODTR Kodu"),
-                         use_container_width=True, height=420)
-        source(f"Kaynak: TÜİK Sanayi Ürün İstatistikleri (PRODTR) + GTİP↔PRODTR 2018 eşleme tablosu · "
-               f"'c' = gizli (açıklanmayan) değer")
+                         use_container_width=True, height=440)
+
+        # ── Alt 2: Tekil ürün derin incelemesi ──
+        with sub2:
+            prod_opts = {f"{r['kod']} · {r['tanim'][:55]}": r['kod']
+                         for r in sorted(f9["all_rows"],
+                                         key=lambda x: (x["satis_deger"] or -1), reverse=True)}
+            sel = st.selectbox("Ürün seçin", list(prod_opts.keys()), index=0,
+                               key="prod_detail_sel")
+            manual = st.text_input("… veya PRODTR kodu girin (ör. 13.93.12.00.00)",
+                                   value="", key="prod_detail_manual")
+            code = manual.strip() if manual.strip() else prod_opts.get(sel)
+            det = product_detail(code) if code else None
+            if not det:
+                st.warning(f"'{code}' için PRODTR kaydı bulunamadı.")
+            else:
+                st.markdown(f"""<div class="report" style="padding:1rem 1.2rem;margin-bottom:.8rem">
+                    <b style="font-size:1rem">{det['tanim']}</b><br>
+                    <span style="color:{MUTED};font-size:.8rem">PRODTR {det['kod']} ·
+                    {det['nace']} · Ölçü birimi: {det['birim'] or '—'} ·
+                    Eşleşen GTİP: {len(det['gtip'])}</span></div>""",
+                    unsafe_allow_html=True)
+                dc1, dc2 = st.columns(2, gap="large")
+                with dc1:
+                    chart_head("Satış Değeri", "milyar ₺ · 2005–2025")
+                    sd = det["satis_deger"]
+                    if sd:
+                        ys = sorted(sd)
+                        figd = go.Figure(go.Bar(x=[str(y) for y in ys],
+                            y=[sd[y]/1e9 for y in ys], marker_color=BRAND,
+                            marker_line_width=0, marker=dict(cornerradius=3),
+                            hovertemplate="%{x}: <b>₺%{y:.2f} mlr</b><extra></extra>"))
+                        figd.update_layout(**LAYOUT, height=260, showlegend=False)
+                        st.plotly_chart(figd, use_container_width=True, config=NOBAR)
+                    else:
+                        st.caption("Satış değeri verisi gizli/yok.")
+                with dc2:
+                    chart_head("Üretim Miktarı", f"{det['birim'] or 'birim'} · 2005–2025")
+                    ud = det["uretim"]
+                    if ud:
+                        ys = sorted(ud)
+                        figu = go.Figure(go.Scatter(x=[str(y) for y in ys],
+                            y=[ud[y] for y in ys], mode="lines",
+                            line=dict(color=TEAL, width=2.4, shape="spline", smoothing=.6),
+                            fill="tozeroy", fillcolor="rgba(13,148,136,.07)",
+                            hovertemplate="%{x}: <b>%{y:,.0f}</b><extra></extra>"))
+                        figu.update_layout(**LAYOUT, height=260, showlegend=False)
+                        st.plotly_chart(figu, use_container_width=True, config=NOBAR)
+                    else:
+                        st.caption("Üretim miktarı verisi gizli/yok.")
+                # Girişim + GTİP listesi
+                gd1, gd2 = st.columns([1, 2], gap="large")
+                with gd1:
+                    gr = det["girisim"]
+                    if gr:
+                        gy = sorted(gr)
+                        chart_head("Girişim Sayısı", "üretici firma · yıllara göre")
+                        figg = go.Figure(go.Scatter(x=[str(y) for y in gy],
+                            y=[gr[y] for y in gy], mode="lines+markers",
+                            line=dict(color=NAVY, width=2),
+                            hovertemplate="%{x}: <b>%{y:.0f} girişim</b><extra></extra>"))
+                        figg.update_layout(**LAYOUT, height=220, showlegend=False)
+                        st.plotly_chart(figg, use_container_width=True, config=NOBAR)
+                with gd2:
+                    chart_head("Eşleşen GTİP Kodları", "gümrük tarife (dış ticaret bağlantısı)")
+                    if det["gtip"]:
+                        gdf = pd.DataFrame([{"GTİP": g["kod"], "Tanım": g["tanim"]}
+                                           for g in det["gtip"]])
+                        st.dataframe(gdf.set_index("GTİP"), use_container_width=True, height=220)
+                    else:
+                        st.caption("Bu ürün için GTİP eşlemesi bulunamadı.")
+
+        # ── Alt 3: GTİP ↔ PRODTR çift yönlü dönüştürücü ──
+        with sub3:
+            cv1, cv2 = st.columns(2, gap="large")
+            with cv1:
+                st.markdown('<div class="chart-h">GTİP → PRODTR</div>'
+                            '<div class="chart-hs">Gümrük tarife kodundan üretim koduna</div>',
+                            unsafe_allow_html=True)
+                gq = st.text_input("GTİP kodu", value="",
+                                   placeholder="ör. 5208 veya 520811100000",
+                                   key="conv_gtip", label_visibility="collapsed")
+                if gq.strip():
+                    res = prodtr_for_gtip(gq)
+                    if res:
+                        st.caption(f"{len(res)} eşleşme")
+                        st.dataframe(pd.DataFrame([{
+                            "GTİP": r["gtip"], "GTİP Tanım": r["gtip_tanim"][:45],
+                            "PRODTR": r["prodtr"], "PRODTR Ürün": r["prodtr_tanim"][:45],
+                        } for r in res]).set_index("GTİP"),
+                            use_container_width=True, height=360)
+                    else:
+                        st.info("Bu GTİP kodu için PRODTR eşleşmesi bulunamadı.")
+            with cv2:
+                st.markdown('<div class="chart-h">PRODTR → GTİP</div>'
+                            '<div class="chart-hs">Üretim kodundan gümrük tarife kodlarına</div>',
+                            unsafe_allow_html=True)
+                pq = st.text_input("PRODTR kodu", value="",
+                                   placeholder="ör. 13.93.12.00.00",
+                                   key="conv_prodtr", label_visibility="collapsed")
+                if pq.strip():
+                    det2 = product_detail(pq.strip())
+                    if det2 and det2["gtip"]:
+                        st.caption(f"{det2['tanim'][:50]} → {len(det2['gtip'])} GTİP")
+                        st.dataframe(pd.DataFrame([{
+                            "GTİP": g["kod"], "Tanım": g["tanim"]}
+                            for g in det2["gtip"]]).set_index("GTİP"),
+                            use_container_width=True, height=360)
+                    elif det2:
+                        st.info("Bu ürün için GTİP eşlemesi yok.")
+                    else:
+                        st.info("PRODTR kodu bulunamadı.")
+
+        source(f"Kaynak: TÜİK Sanayi Ürün İstatistikleri (PRODTR, 2005–2025) + "
+               f"GTİP↔PRODTR 2018 eşleme tablosu (17.167 GTİP) · 'c' = gizli değer")
     else:
         st.info("Bu sektör için PRODTR ürün istatistiği bulunamadı "
                 "(veya prodtr_cache.pkl eksik).")

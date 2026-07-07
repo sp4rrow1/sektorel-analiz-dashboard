@@ -13,7 +13,7 @@ Kullanım:
   from prodtr_data import sector_products
   agg = sector_products('C13')   # sektörün ürün özeti
 """
-import os, pickle, warnings
+import os, re, pickle, warnings
 import pandas as pd
 import numpy as np
 
@@ -87,18 +87,24 @@ def build_cache(force=False):
                 m[code] = series
         data[key] = m
 
-    # GTİP → PRODTR eşleme
-    gtip_map = {}
+    # GTİP ↔ PRODTR eşleme (header satır 0: kol1=GTİP, kol2=Tanım, kol3=PRODTR, kol4=Tanım)
+    gtip_map = {}    # {prodtr: [gtip,...]}   ileri yön
+    gtip_rev = {}    # {gtip: prodtr}          geri yön
+    gtip_desc = {}   # {gtip: tanim}
     try:
-        g = pd.read_excel(GTIP, sheet_name=0, header=1)
-        g.columns = [str(c).strip() for c in g.columns]
-        gc = [c for c in g.columns if 'GT' in c.upper()]
-        pc = [c for c in g.columns if 'PRODTR' in c.upper()]
-        if gc and pc:
-            for _, r in g.iterrows():
-                gt = str(r[gc[0]]).strip(); pr = str(r[pc[0]]).strip()
-                if gt and gt != '-' and pr and pr != 'nan':
-                    gtip_map.setdefault(pr, []).append(gt)
+        g = pd.read_excel(GTIP, sheet_name=0, header=0)
+        cols = list(g.columns)
+        gtip_col, gtip_tan, prod_col = cols[1], cols[2], cols[3]
+        for _, r in g.iterrows():
+            gt = str(r[gtip_col]).strip()
+            pr = str(r[prod_col]).strip()
+            if not gt or gt in ('-', 'nan') or not pr or pr == 'nan':
+                continue
+            gtip_map.setdefault(pr, []).append(gt)
+            gtip_rev[gt] = pr
+            td = str(r.get(gtip_tan, '')).strip()
+            if td and td != 'nan':
+                gtip_desc[gt] = td
     except Exception as e:
         print(f'[prodtr] GTİP eşleme atlandı: {e}')
 
@@ -106,6 +112,8 @@ def build_cache(force=False):
         'desc': desc,
         'data': data,
         'gtip_map': gtip_map,
+        'gtip_rev': gtip_rev,
+        'gtip_desc': gtip_desc,
         'years': sorted(years_all),
         'meta': {'built': pd.Timestamp.now().isoformat()},
     }
@@ -204,6 +212,85 @@ def sector_products(nace, top_n=12):
 def gtip_for_product(prodtr_code):
     """PRODTR kodu için eşleşen GTİP kodları."""
     return _load()['gtip_map'].get(str(prodtr_code).strip(), [])
+
+
+def product_detail(prodtr_code):
+    """
+    Herhangi bir PRODTR kodunun tam profili: tanım, birim, tüm yıllara ait
+    üretim/satış/girişim serileri, eşleşen GTİP kodları.
+    Döner: dict — kod yoksa None.
+    """
+    c = _load()
+    code = str(prodtr_code).strip()
+    meta = c['desc'].get(code)
+    if not meta:
+        return None
+    d = c['data']
+    gtips = c['gtip_map'].get(code, [])
+    gd = c.get('gtip_desc', {})
+    return {
+        'kod': code,
+        'tanim': meta.get('tanim', ''),
+        'aciklama_en': '',
+        'birim': meta.get('birim', ''),
+        'duzey': meta.get('duzey', ''),
+        'nace': _nace_of(code),
+        'uretim': dict(sorted(d.get('uretim', {}).get(code, {}).items())),
+        'satis_deger': dict(sorted(d.get('satis_deger', {}).get(code, {}).items())),
+        'satis_miktar': dict(sorted(d.get('satis_miktar', {}).get(code, {}).items())),
+        'girisim': dict(sorted(d.get('girisim', {}).get(code, {}).items())),
+        'gtip': [{'kod': g, 'tanim': gd.get(g, '')} for g in gtips],
+    }
+
+
+def prodtr_for_gtip(gtip_code):
+    """
+    GTİP kodu → eşleşen PRODTR ürünü (geri yön). Kısmi kod da kabul eder
+    (ör. '5208' ile başlayan tüm GTİP'ler). Döner: [{gtip, gtip_tanim, prodtr, prodtr_tanim}]
+    """
+    c = _load()
+    q = re.sub(r'[^0-9]', '', str(gtip_code))
+    if not q:
+        return []
+    rev, gd, desc = c['gtip_rev'], c.get('gtip_desc', {}), c['desc']
+    out = []
+    for gt, pr in rev.items():
+        gt_norm = re.sub(r'[^0-9]', '', gt)
+        if gt_norm == q or gt_norm.startswith(q):
+            out.append({
+                'gtip': gt, 'gtip_tanim': gd.get(gt, ''),
+                'prodtr': pr, 'prodtr_tanim': desc.get(pr, {}).get('tanim', ''),
+            })
+    # tam eşleşmeyi öne al, sonra koda göre sırala
+    out.sort(key=lambda r: (re.sub(r'[^0-9]', '', r['gtip']) != q, r['gtip']))
+    return out[:50]
+
+
+def search_products(query, nace=None, level='PRODTR', limit=50):
+    """
+    PRODTR ürünlerini kod veya tanıma göre arar.
+    nace verilirse o sektöre sınırlar. Döner: [{kod, tanim, birim, satis_deger}]
+    """
+    c = _load()
+    q = str(query).strip().lower()
+    if not q:
+        return []
+    sd = c['data'].get('satis_deger', {})
+    out = []
+    for code, meta in c['desc'].items():
+        if level and meta.get('duzey') != level:
+            continue
+        if nace and nace != 'C' and _nace_of(code) != nace:
+            continue
+        if nace == 'C' and _nace_of(code) is None:
+            continue
+        tan = meta.get('tanim', '')
+        if q in code.lower() or q in tan.lower():
+            _, sval = _last_val(sd.get(code, {}))
+            out.append({'kod': code, 'tanim': tan,
+                        'birim': meta.get('birim', ''), 'satis_deger': sval})
+    out.sort(key=lambda r: (r['satis_deger'] is None, -(r['satis_deger'] or 0)))
+    return out[:limit]
 
 
 if __name__ == '__main__':
