@@ -993,8 +993,9 @@ st.markdown("<div style='height:1.4rem'></div>", unsafe_allow_html=True)
 tabs = st.tabs([
     "📌  Genel Bakış",
     "🏭  Üretim", "🔍  Alt Kırılımlar", "🌍  Dış Ticaret",
-    "⚙️  Kapasite", "💰  Enflasyon", "📈  Ciro", "👥  İstihdam",
+    "⚙️  Kapasite", "💰  Maliyet Baskısı", "📈  Ciro", "👥  İstihdam",
     "🏆  İSO 500", "📰  Haber & Risk", "📐  Analist Görünümü",
+    "📘  Metodoloji",
 ])
 
 # ── TAB 0: GENEL BAKIŞ ───────────────────────────────────────────────────────────
@@ -1128,6 +1129,76 @@ with tabs[0]:
             source("Skor: gösterge değerleri sektörel bantlara göre 0–100'e ölçeklenip ortalanır")
         else:
             st.info("Skor için yeterli veri yok.")
+
+        # ── Erken Uyarı / Trafik Işığı ──
+        st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+        chart_head("Erken Uyarı Sistemi", "Son döneme ait kırılganlık ve sinyaller")
+        
+        warnings = []
+        
+        # Üretim kuralı
+        if _prod_ser:
+            last_3 = list(_prod_ser.values())[-3:]
+            if len(last_3) == 3 and all(v is not None and v < 0 for v in last_3):
+                warnings.append(("Üretim", "🔴", "3 ay üst üste daralma"))
+            elif last_3 and last_3[-1] is not None and last_3[-1] < 0:
+                warnings.append(("Üretim", "🟡", f"Son ay daralma (%{last_3[-1]:.1f})"))
+            else:
+                warnings.append(("Üretim", "🟢", "Büyüme eğilimi"))
+
+        # KKO kuralı
+        if kko_val is not None and imalat_kko_val is not None:
+            diff = kko_val - imalat_kko_val
+            if diff <= -5:
+                warnings.append(("Kapasite", "🔴", f"İmalatın {abs(diff):.1f} puan altı"))
+            elif diff < 0:
+                warnings.append(("Kapasite", "🟡", f"İmalatın {abs(diff):.1f} puan altı"))
+            else:
+                warnings.append(("Kapasite", "🟢", "Ortalama üzeri kullanım"))
+
+        # Reel Ciro kuralı
+        if reel_v is not None:
+            if reel_v < -5:
+                warnings.append(("Reel Ciro", "🔴", f"%{abs(reel_v):.1f} reel daralma"))
+            elif reel_v < 0:
+                warnings.append(("Reel Ciro", "🟡", f"%{abs(reel_v):.1f} reel daralma"))
+            else:
+                warnings.append(("Reel Ciro", "🟢", "Pozitif reel ciro"))
+
+        # İstihdam kuralı
+        if emp_val is not None:
+            if emp_val < -3:
+                warnings.append(("İstihdam", "🔴", f"%{abs(emp_val):.1f} daralma"))
+            elif emp_val < 0:
+                warnings.append(("İstihdam", "🟡", "Zayıf istihdam"))
+            else:
+                warnings.append(("İstihdam", "🟢", "İstihdam artışı"))
+        
+        # ÜFE kuralı
+        if ufe_val is not None and ufe_imalat_val is not None:
+            if ufe_val > ufe_imalat_val + 5:
+                warnings.append(("Maliyet", "🔴", "Çok yüksek maliyet baskısı"))
+            elif ufe_val > ufe_imalat_val:
+                warnings.append(("Maliyet", "🟡", "İmalat ortalaması üzeri"))
+            else:
+                warnings.append(("Maliyet", "🟢", "Ilımlı maliyet seyri"))
+
+        if warnings:
+            html = '<div style="display:flex; flex-direction:column; gap:0.4rem;">'
+            for w_name, w_icon, w_desc in warnings:
+                bg = "#FEE2E2" if w_icon=="🔴" else "#FEF3C7" if w_icon=="🟡" else "#D1FAE5"
+                text_col = "#991B1B" if w_icon=="🔴" else "#92400E" if w_icon=="🟡" else "#065F46"
+                html += f'''
+                <div style="background:{bg}; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem; display:flex; align-items:center;">
+                    <span style="font-size:1.1rem; margin-right:0.6rem;">{w_icon}</span>
+                    <strong style="margin-right:0.4rem; color:{text_col}; width:75px;">{w_name}</strong>
+                    <span style="color:#475569;">{w_desc}</span>
+                </div>
+                '''
+            html += '</div>'
+            st.markdown(html, unsafe_allow_html=True)
+        else:
+            st.info("Uyarı sistemi için yeterli veri yok.")
 
         # ── Mevsimsellik ısı takvimi ──
         sec_title("Mevsimsellik Takvimi", "Üretim YoY % · yıl × ay deseni")
@@ -1330,9 +1401,12 @@ with tabs[3]:
     if f3:
         c1, c2 = st.columns([3, 2], gap="large")
         with c1:
-            chart_head("Aylık Seyir", f"Son {ay_sayisi} ay")
+            cmp_sub = f" · kıyas: {compare_nace}" if compare_nace else ""
+            chart_head("Aylık Seyir", f"Son {ay_sayisi} ay{cmp_sub}")
             fig = go.Figure()
             _ends = []
+            
+            # Seçili Sektör
             for lbl, s in f3.items():
                 is_exp = "hracat" in lbl and "thalat" not in lbl
                 xs, ys = series_xy(s, ay_sayisi)
@@ -1345,12 +1419,28 @@ with tabs[3]:
                     fillcolor="rgba(29,78,216,.06)" if is_exp else "rgba(148,163,184,.08)",
                     hovertemplate="<b>%{y:+.1f}%</b><extra>" + ("İhracat" if is_exp else "İthalat") + "</extra>"))
                 if xs: _ends.append((xs[-1], ys[-1], col, "{:+.1f}%"))
+                
+            # Kıyaslama Sektörü Overlay
+            if compare_nace:
+                f3_cmp = build_sekil3(compare_nace, cache["dis_ticaret"])
+                if f3_cmp:
+                    for lbl, s in f3_cmp.items():
+                        is_exp = "hracat" in lbl and "thalat" not in lbl
+                        cx, cy = series_xy(s, ay_sayisi)
+                        col = TRADE_EXP if is_exp else TRADE_IMP
+                        if cx:
+                            fig.add_trace(go.Scatter(
+                                x=cx, y=cy, mode="lines", name=f"⚖ {compare_nace} ({'İhr.' if is_exp else 'İth.'})",
+                                line=dict(color=col, width=1.5, dash="dot", shape="spline", smoothing=.8),
+                                hovertemplate="<b>%{y:+.1f}%</b><extra>Kıyas: " + compare_nace + "</extra>"))
+            
             add_end_labels(fig, _ends)
             fig.update_layout(**LAYOUT, height=360)
             fig.update_xaxes(dtick=6)
             fig.update_yaxes(ticksuffix="%")
             fig.add_hline(y=0, line_width=1, line_color="#CBD5E1")
             st.plotly_chart(fig, use_container_width=True, config=NOBAR)
+            
         with c2:
             chart_head("Yıllık Ortalama", "YoY %")
             ann_t = {lbl: annual_avg(s) for lbl, s in f3.items()}
@@ -1374,7 +1464,38 @@ with tabs[3]:
             fig2.update_yaxes(showgrid=False, autorange="reversed")
             fig2.add_vline(x=0, line_width=1, line_color="#CBD5E1")
             st.plotly_chart(fig2, use_container_width=True, config=NOBAR)
-        source("Kaynak: TÜİK — Dış Ticaret Miktar Endeksi, mevsim ve takvim etkisinden arındırılmış")
+
+        st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
+        
+        # ── Dış Ticaret Makası Alt Grafik ──
+        if _net_trade:
+            chart_head("Dış Ticaret Makası", "İhracat büyümesi − İthalat büyümesi (Puan) · net ticaret yönelimi")
+            m_xs, m_ys = series_xy(_net_trade, ay_sayisi)
+            fig_m = go.Figure()
+            fig_m.add_trace(go.Scatter(
+                x=m_xs, y=m_ys, mode="lines", name="Ticaret Makası",
+                line=dict(color=BRAND, width=2, shape="spline", smoothing=.8),
+                fill="tozeroy",
+                fillcolor="rgba(16,185,129,.15)", # default green
+                hovertemplate="<b>%{y:+.1f} pn</b><extra>Makas</extra>"
+            ))
+            # Dinamik dolgu rengi (pozitif yeşil, negatif kırmızı)
+            # Plotly scatter ile sıfır altına farklı renk zor olduğu için bar chart alternatifi kullanalım:
+            fig_m.data = [] # clear line
+            fig_m.add_trace(go.Bar(
+                x=m_xs, y=m_ys, name="Ticaret Makası",
+                marker_color=["rgba(16,185,129,.7)" if v >= 0 else "rgba(239,68,68,.7)" for v in m_ys],
+                marker_line_width=0,
+                hovertemplate="<b>%{y:+.1f} pn</b><extra>Makas</extra>"
+            ))
+            fig_m.update_layout(**LAYOUT, height=220, margin=dict(l=8, r=32, t=8, b=32))
+            fig_m.update_xaxes(dtick=6)
+            fig_m.update_yaxes(ticksuffix=" pn")
+            fig_m.add_hline(y=0, line_width=1, line_color="#CBD5E1")
+            st.plotly_chart(fig_m, use_container_width=True, config=NOBAR)
+
+        source("Kaynak: TÜİK — Dış Ticaret Miktar Endeksi" + 
+              (" · kesikli çizgi: karşılaştırma sektörü" if compare_nace else ""))
     else:
         st.info("Bu sektör için dış ticaret verisi bulunamadı.")
 
@@ -1717,10 +1838,13 @@ with tabs[9]:
     with th2:
         tr_label = st.selectbox("Zaman aralığı", list(TIME_RANGES.keys()), index=2,
                                 key="news_time", label_visibility="collapsed")
+        if not tr_label:
+            tr_label = list(TIME_RANGES.keys())[2]
+            
     if news_query.strip():
         st.caption(f"🔍 Özel arama terimi kullanılıyor: **{news_query.strip()}**")
 
-    news_items = get_news(nace, news_query, TIME_RANGES[tr_label])
+    news_items = get_news(nace, news_query, TIME_RANGES.get(tr_label, ""))
 
     nl, nr = st.columns([2, 3], gap="large")
 
@@ -1958,7 +2082,168 @@ with tabs[10]:
 
     st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
 
-    # ── Sektör Konumlanması (24 sektör içinde percentil) ──
+    # ── Birim İşgücü Maliyeti (ULC Proxy) ──
+    u1, u2 = st.columns([3, 2], gap="large")
+    with u1:
+        chart_head("Birim İşgücü Maliyeti (ULC Proxy)",
+                   "ÜFE − Verimlilik · maliyet rekabetçiliği göstergesi")
+        _ulc = diff_series(_ufe_ser, _verim) if _ufe_ser and _verim else {}
+        if _ulc:
+            _ulc_common = sorted(_ulc.keys())[-ay_sayisi:]
+            xs_ulc = [tr_month(p) for p in _ulc_common]
+            ys_ulc = [round(_ulc.get(p, 0), 1) for p in _ulc_common]
+            fig_ulc = go.Figure()
+            fig_ulc.add_trace(go.Bar(
+                x=xs_ulc, y=ys_ulc, name="ULC Proxy",
+                marker_color=["rgba(220,38,38,.55)" if v > 0 else "rgba(5,150,105,.55)" for v in ys_ulc],
+                marker_line_width=0,
+                hovertemplate="<b>%{y:+.1f} puan</b><extra>ULC</extra>"))
+            # Bileşenleri de göster
+            if _ufe_ser and _verim:
+                ys_u = [round(_ufe_ser.get(p, 0), 1) for p in _ulc_common if p in _ufe_ser]
+                ys_v = [round(_verim.get(p, 0), 1) for p in _ulc_common if p in _verim]
+                if len(ys_u) == len(xs_ulc):
+                    fig_ulc.add_trace(go.Scatter(
+                        x=xs_ulc, y=ys_u, mode="lines", name="ÜFE",
+                        line=dict(color=AMBER, width=1.5, dash="dot", shape="spline", smoothing=.8),
+                        hovertemplate="<b>%{y:.1f}%</b><extra>ÜFE</extra>"))
+                if len(ys_v) == len(xs_ulc):
+                    fig_ulc.add_trace(go.Scatter(
+                        x=xs_ulc, y=ys_v, mode="lines", name="Verimlilik",
+                        line=dict(color=TEAL, width=1.5, dash="dot", shape="spline", smoothing=.8),
+                        hovertemplate="<b>%{y:+.1f}</b><extra>Verimlilik</extra>"))
+            fig_ulc.update_layout(**LAYOUT, height=320)
+            fig_ulc.update_xaxes(dtick=6)
+            fig_ulc.update_yaxes(ticksuffix=" pn")
+            fig_ulc.add_hline(y=0, line_width=1, line_color="#CBD5E1")
+            st.plotly_chart(fig_ulc, use_container_width=True, config=NOBAR)
+            st.markdown('<div class="src">Kırmızı bar: maliyet artışı verimliliği aşıyor (rekabet kaybı) · '
+                        'Yeşil: verimlilik maliyeti karşılıyor (rekabet kazanımı)</div>',
+                        unsafe_allow_html=True)
+        else:
+            st.info("ULC hesaplaması için ÜFE, üretim ve istihdam verisi gerekli.")
+
+    with u2:
+        # ── REDK Overlay ──
+        chart_head("Reel Efektif Döviz Kuru & İhracat",
+                   "REDK (ÜFE bazlı) vs ihracat büyümesi · rekabet etkisi")
+        _redk = cache.get("redk")
+        if _redk and _ih_ser:
+            _r_common = sorted(set(_redk) & set(_ih_ser))[-ay_sayisi:]
+            if len(_r_common) >= 6:
+                xs_rd = [tr_month(p) for p in _r_common]
+                fig_rd = go.Figure()
+                fig_rd.add_trace(go.Scatter(
+                    x=xs_rd, y=[round(_ih_ser.get(p, 0), 1) for p in _r_common],
+                    mode="lines", name="İhracat YoY%", yaxis="y",
+                    line=dict(color=TRADE_EXP, width=2.2, shape="spline", smoothing=.8),
+                    hovertemplate="<b>%{y:+.1f}%</b><extra>İhracat</extra>"))
+                fig_rd.add_trace(go.Scatter(
+                    x=xs_rd, y=[round(_redk[p], 1) for p in _r_common],
+                    mode="lines", name="REDK", yaxis="y2",
+                    line=dict(color=AMBER, width=2, dash="dot", shape="spline", smoothing=.8),
+                    hovertemplate="<b>%{y:.1f}</b><extra>REDK</extra>"))
+                fig_rd.update_layout(
+                    **LAYOUT, height=320,
+                    yaxis=dict(title=None, ticksuffix="%", side="left"),
+                    yaxis2=dict(title=None, overlaying="y", side="right",
+                                showgrid=False, tickfont=dict(size=9, color=AMBER)),
+                )
+                fig_rd.update_xaxes(dtick=6)
+                st.plotly_chart(fig_rd, use_container_width=True, config=NOBAR)
+                st.markdown('<div class="src">REDK düşerken (TL değer kaybı) ihracat artışı '
+                            'beklenir · Ters korelasyon = kur duyarlılığı yüksek sektör</div>',
+                            unsafe_allow_html=True)
+            else:
+                st.info("REDK verisi yetersiz (cache_all.py yeniden çalıştırılmalı).")
+        else:
+            st.info("REDK verisi için `python cache_all.py` çalıştırın — TCMB EVDS'den çekilir.")
+
+    st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
+
+    # ── İYA Güven Endeksi ──
+    sec_title("Öncü Göstergeler — Sektörel Güven Endeksi", "TCMB İktisadi Yönelim Anketi (İYA) · İmalat sanayi beklentileri (Denge değeri)")
+    _iya = cache.get("iya")
+    if _iya:
+        fig_iya = go.Figure()
+        cols_iya = [BRAND, AMBER, TEAL, NEG]
+        for idx, (k, info) in enumerate(_iya.items()):
+            series = info['data']
+            label = info['label']
+            xs, ys = series_xy(series, ay_sayisi)
+            if xs:
+                fig_iya.add_trace(go.Scatter(
+                    x=xs, y=ys, mode="lines", name=label,
+                    line=dict(color=cols_iya[idx % len(cols_iya)], width=2.2, shape="spline", smoothing=.8),
+                    hovertemplate="<b>%{y:+.1f}</b><extra>" + label + "</extra>"))
+        fig_iya.update_layout(**LAYOUT, height=360, margin=dict(l=8, r=8, t=8, b=30))
+        fig_iya.update_xaxes(dtick=6)
+        fig_iya.update_yaxes(ticksuffix="")
+        fig_iya.add_hline(y=0, line_width=1.5, line_color="#94A3B8")
+        st.plotly_chart(fig_iya, use_container_width=True, config=NOBAR)
+        source("Kaynak: TCMB EVDS · Denge = (Artacak/İyileşecek diyenler %) − (Azalacak/Kötüleşecek diyenler %)")
+    else:
+        st.info("İYA Güven Endeksi verisi için `python cache_all.py` çalıştırın.")
+
+    st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
+
+    # ── Sektörler Arası Korelasyon Matrisi ──
+    sec_title("Sektörler Arası Korelasyon",
+              "24 imalat sektörünün üretim YoY serileri arasındaki Pearson korelasyonu (son 24 ay)")
+
+    @st.cache_data(show_spinner=False)
+    def _corr_matrix(cache_key):
+        import numpy as np
+        sector_data = {}
+        for k in ALL_MANUFACTURING:
+            fk = build_sekil1(k, cache["alt_c"], ana_c_series=_ana_c)
+            if not fk: continue
+            merged = {}
+            for _, s in fk.items():
+                for p, v in s.items():
+                    if v is not None: merged.setdefault(p, []).append(v)
+            if merged:
+                sector_data[k] = {p: sum(vs)/len(vs) for p, vs in merged.items()}
+        if len(sector_data) < 3:
+            return None, None
+        # Son 24 ay, ortak dönemler
+        all_periods = sorted(set.intersection(*[set(s.keys()) for s in sector_data.values()]))[-24:]
+        if len(all_periods) < 6:
+            return None, None
+        codes = sorted(sector_data.keys())
+        matrix = []
+        for k in codes:
+            matrix.append([sector_data[k].get(p, 0) for p in all_periods])
+        corr = np.corrcoef(matrix)
+        return corr, codes
+
+    corr, corr_codes = _corr_matrix(cache_date)
+    if corr is not None:
+        corr_labels = [f"{c.lstrip('C')}·{short_name(c, 12)}" for c in corr_codes]
+        fig_corr = go.Figure(go.Heatmap(
+            z=corr.tolist(), x=corr_labels, y=corr_labels,
+            text=[[f"{v:.2f}" for v in row] for row in corr.tolist()],
+            texttemplate="%{text}", textfont=dict(size=7.5, family="Inter"),
+            colorscale=[[0, "#DC2626"], [0.35, "#FEE2E2"], [0.5, "#F8FAFC"],
+                        [0.65, "#DBEAFE"], [1, BRAND]],
+            zmid=0, zmin=-1, zmax=1, xgap=2, ygap=2, showscale=True,
+            colorbar=dict(thickness=12, len=0.5, tickfont=dict(size=8)),
+            hovertemplate="%{x} ↔ %{y}<br><b>r = %{z:.2f}</b><extra></extra>",
+        ))
+        fig_corr.update_layout(**LAYOUT, height=520, hovermode="closest",
+                               margin=dict(l=8, r=8, t=8, b=8))
+        fig_corr.update_xaxes(showline=False, ticks="", tickfont=dict(size=8),
+                              tickangle=45)
+        fig_corr.update_yaxes(showgrid=False, tickfont=dict(size=8), autorange="reversed")
+        st.plotly_chart(fig_corr, use_container_width=True, config=NOBAR)
+        source("Pearson korelasyonu · son 24 aylık üretim YoY% ortalaması · "
+               "koyu mavi = güçlü pozitif (birlikte hareket) · kırmızı = negatif (ters yönlü)")
+    else:
+        st.info("Korelasyon matrisi için yeterli veri yok.")
+
+    st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
+
+
     if nace != TOTAL_MANUFACTURING:
         sec_title("Sektör Konumlanması",
                   f"{nace} · 24 imalat sektörü içindeki yüzdelik dilim (100 = en iyi)")
@@ -2005,6 +2290,139 @@ with tabs[10]:
         st.markdown('<div class="src">Konumlanma yüzdelikleri tekil sektörler için gösterilir; '
                     'toplam imalat sanayii seçiliyken bu bölüm devre dışıdır.</div>',
                     unsafe_allow_html=True)
+
+# ── TAB 11: METODOLOJİ ──────────────────────────────────────────────────────────
+with tabs[11]:
+    sec_title("Metodoloji & Veri Kaynakları",
+              "Dashboard'ta kullanılan tüm veri kaynakları, hesaplama yöntemleri ve türev göstergeler")
+
+    met_l, met_r = st.columns([1, 1], gap="large")
+
+    with met_l:
+        # ── Veri Kaynakları ──
+        chart_head("Veri Kaynakları", "7 temel + 2 tamamlayıcı kaynak")
+        st.markdown(f"""
+        <div class="report" style="font-size:.82rem;line-height:1.7;">
+        <div class="r-head">1. TÜİK — Sanayi Üretim Endeksi</div>
+        <p class="r-para">Kaynak: TÜİK SDMX REST API v1.5 · <code>DF_SANAYI_URETIM_ENDEKS_ALT_C</code> (3 haneli NACE)
+        ve <code>DF_SANAYI_URETIM_ENDEKS_SINIF_O</code> (4 haneli sınıf düzeyi).<br>
+        Endeks bazı: 2021=100. Üç düzeltme türü: ham, takvim arındırılmış, mevsim+takvim arındırılmış.
+        Dashboard'da gösterilen YoY %: bir önceki yılın aynı ayına göre değişim oranı.
+        Mevsim arındırılmış seri tercih edilir; yoksa takvim arındırılmış kullanılır.</p>
+
+        <div class="r-head">2. TÜİK — Dış Ticaret Miktar Endeksi</div>
+        <p class="r-para">İhracat: <code>DF_TAKVIM_ETKISINDEN_ARINDIRILMIS_IHRACAT_V2</code><br>
+        İthalat: <code>DF_TAKVIM_ETKISINDEN_ARINDIRILMIS_ITHALAT_V2</code><br>
+        Sektör eşlemesi NACE → SITC tablonuza göre yapılır (örn. C13 Tekstil → SITC 6).
+        Gösterilen metrik: takvim arındırılmış miktar endeksinin YoY % değişimi.</p>
+
+        <div class="r-head">3. TCMB EVDS — Kapasite Kullanım Oranı (KKO)</div>
+        <p class="r-para">Kaynak: TCMB Elektronik Veri Dağıtım Sistemi · <code>TP.KKO2.IS.*</code> seri grubu.<br>
+        İmalat sanayii toplam + 24 alt sektör bazında aylık KKO (%).
+        TCMB anketi ile elde edilen yüzde, sektörün kurulu kapasitesinin ne kadarını kullandığını ölçer.
+        İmalat ortalamasıyla fark, sektörün göreli durumunu gösterir.</p>
+
+        <div class="r-head">4. TÜİK — Yurt İçi Üretici Fiyat Endeksi (Yİ-ÜFE)</div>
+        <p class="r-para">Kaynak: <code>DF_UFE_SANAYI_V2</code><br>
+        Sektör bazında ve imalat geneli yıllık değişim (%). Sektörün maliyet baskısını ölçer.
+        İmalat ÜFE'sinden yüksekse → sektörde ortalamanın üzerinde girdi maliyeti baskısı var.</p>
+
+        <div class="r-head">5. TÜİK — Ciro Endeksi</div>
+        <p class="r-para">Kaynak: <code>DF_CIRO_ENDEKS_DEGISIM_C</code> · Bazı: 2021=100<br>
+        Mevsim ve takvim etkisinden arındırılmış sektörel ciro değişimi (YoY %).
+        Nominal büyümeyi gösterir; reel büyüme için ÜFE ile deflate edilir.</p>
+
+        <div class="r-head">6. TÜİK — Ücretli Çalışan İstatistikleri</div>
+        <p class="r-para">Kaynak: <code>DF_UCRETLI_CALISAN_ISTATISTIKLERI_C</code><br>
+        Takvim arındırılmış ücretli çalışan endeksi (YoY %). Sektördeki istihdam dinamiğini ölçer.</p>
+
+        <div class="r-head">7. İSO 500 & İkinci 500</div>
+        <p class="r-para">Kaynak: İstanbul Sanayi Odası yıllık yayınları (Excel).<br>
+        NACE kodu eşlemesiyle sektöre ait firmalar filtrelenir. Üretimden satışlar (₺),
+        ihracat ($), çalışan sayısı, FAVÖK marjı gibi kurumsal metrikler hesaplanır.</p>
+
+        <div class="r-head">8. Google News RSS</div>
+        <p class="r-para">Sektöre özel anahtar kelimelerle Google News RSS akışından son haberler çekilir.
+        Zaman filtresi (24 saat – 1 yıl) Google'ın <code>when:</code> operatörüyle sunucu tarafında uygulanır.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with met_r:
+        # ── Türev Göstergeler ──
+        chart_head("Türev Göstergeler & Hesaplama Yöntemleri", "Temel verilerden türetilen analitik metrikler")
+        st.markdown(f"""
+        <div class="report" style="font-size:.82rem;line-height:1.7;">
+        <div class="r-head">Reel Ciro Büyümesi</div>
+        <p class="r-para">Formül: <code>Reel = (1 + Nominal%) / (1 + ÜFE%) − 1</code><br>
+        Nominal ciro artışından enflasyonu (ÜFE) arındırır. Pozitifse sektör gerçek anlamda büyüyor,
+        negatifse nominal artış enflasyonun altında kalmış (reel daralma) demektir.</p>
+
+        <div class="r-head">İşgücü Verimliliği (Proxy)</div>
+        <p class="r-para">Formül: <code>Verimlilik ≈ Üretim YoY% − İstihdam YoY%</code><br>
+        Üretim istihdamdan hızlı artıyorsa verimlilik yükselir (pozitif makas).
+        Negatifse istihdam üretimden hızlı artıyor → birim işgücü maliyeti baskısı.</p>
+
+        <div class="r-head">Birim İşgücü Maliyeti (ULC Proxy)</div>
+        <p class="r-para">Formül: <code>ULC ≈ ÜFE YoY% − Verimlilik</code><br>
+        = <code>ÜFE − (Üretim − İstihdam)</code><br>
+        Maliyet artışı verimlilik artışını aşıyorsa → rekabet gücü kaybı.
+        Düşük ULC = sektör maliyet avantajı kazanıyor.</p>
+
+        <div class="r-head">Dış Ticaret Makası</div>
+        <p class="r-para">Formül: <code>Makas = İhracat YoY% − İthalat YoY%</code><br>
+        Pozitifse ihracat ithalattan hızlı büyüyor → ticaret pozisyonu iyileşiyor.
+        Alan grafiği olarak gösterilir: yeşil bölge = sektör lehine, kırmızı = aleyhine.</p>
+
+        <div class="r-head">Üretim Momentumu</div>
+        <p class="r-para">Formül: <code>Momentum = Ort(son 3 ay) − Ort(önceki 3 ay)</code><br>
+        İvme göstergesi: pozitifse büyüme hızlanıyor, negatifse yavaşlıyor.
+        Trendin yönü değil, trendin değişme hızı ölçülür.</p>
+
+        <div class="r-head">Oynaklık (Volatilite)</div>
+        <p class="r-para">Formül: Son 24 ayın standart sapması (σ)<br>
+        Yüksek σ = öngörülemez talep/fiyat ortamı → planlama ve nakit akışı riski.
+        Düşük σ = istikrarlı sektör → daha güvenilir projeksiyonlar.</p>
+
+        <div class="r-head">Sektör Sağlık Skoru (0–100)</div>
+        <p class="r-para">6 gösterge, sektörel bantlara göre 0–100'e ölçeklenir ve eşit ağırlıkla ortalamalanır:<br>
+        • Üretim [−15, +15] → 0–100<br>
+        • İhracat [−20, +20] → 0–100<br>
+        • Ciro [−25, +40] → 0–100<br>
+        • İstihdam [−10, +10] → 0–100<br>
+        • KKO farkı (sektör−imalat) [−10, +10] → 0–100<br>
+        • Maliyet avantajı (imalat ÜFE−sektör ÜFE) [−15, +15] → 0–100<br>
+        Kırmızı: &lt;40 · Sarı: 40–60 · Yeşil: &gt;60</p>
+
+        <div class="r-head">Erken Uyarı Trafik Işığı</div>
+        <p class="r-para">Her gösterge için otomatik eşik kontrolü:<br>
+        🔴 <b>Alarm</b>: 3+ ay üst üste negatif üretim, reel daralma &gt;5%, KKO imalat altında 8+ puan<br>
+        🟡 <b>Dikkat</b>: Son ay negatif, reel daralma &lt;5%, ÜFE baskısı imalat üzerinde<br>
+        🟢 <b>Normal</b>: Tüm eşikler sağlıklı aralıkta</p>
+
+        <div class="r-head">Sektör Konumlanması (Yüzdelik Dilim)</div>
+        <p class="r-para">Seçili sektörün 24 imalat alt sektörü içindeki göreli konumu.
+        Her metrik için yüzdelik dilim (0–100) hesaplanır. 100 = en iyi performans.
+        Yeşil: üst üçte bir · Sarı: orta · Kırmızı: alt üçte bir.</p>
+
+        <div class="r-head">Korelasyon Matrisi</div>
+        <p class="r-para">24 sektörün son 24 aylık üretim YoY serileri arasındaki Pearson korelasyon katsayısı.
+        Yüksek korelasyon (→1): sektörler aynı yönde hareket ediyor (tedarik zinciri bağımlılığı).
+        Negatif korelasyon: çeşitlendirme potansiyeli. Hesaplama: <code>numpy.corrcoef</code></p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── NACE-SITC Eşleme Tablosu ──
+    st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+    chart_head("NACE → SITC Eşleme Tablosu", "Dış ticaret verisi sektör eşlemesi")
+    sitc_rows = []
+    for code in sorted(ALL_MANUFACTURING):
+        sitc_rows.append({
+            "NACE": code,
+            "Sektör": nace_name(code) if code in NACE_NAMES else SECTOR_NAMES.get(code, code),
+            "SITC Bölüm": SITC_MAP.get(code, "T"),
+        })
+    st.dataframe(pd.DataFrame(sitc_rows).set_index("NACE"), use_container_width=True, height=320)
+    source("Eşleme: 2 haneli NACE Rev.2 → SITC Rev.4 bölüm kodu · T = Toplam dış ticaret")
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  OTOMATİK RAPOR
@@ -2053,6 +2471,7 @@ if "rapor_text" in st.session_state and st.session_state.get("rapor_nace") == na
         "SEKIL2": "Alt Kırılımlar", "SEKIL3": "Dış Ticaret",
         "SEKIL4": "Kapasite Kullanımı", "SEKIL5": "ÜFE · Maliyet",
         "SEKIL6": "İSO 500 · Kurumsal Görünüm",
+        "SEKIL7": "Ciro Endeksi", "SEKIL8": "İstihdam",
     }
     html = ""
     any_section = False

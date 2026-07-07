@@ -180,6 +180,64 @@ def fetch_kko():
 
     return result
 
+def fetch_redk():
+    """TCMB Reel Efektif Döviz Kuru (ÜFE bazlı)."""
+    print("[8] TCMB EVDS - Reel Efektif Kur (ÜFE bazlı)...")
+    try:
+        url = (f"series=TP.REELKUR.U2"
+               f"&startDate=01-01-2015&endDate=01-06-2030"
+               f"&type=json&frequency=5&aggregationTypes=avg")
+        data = fetch_evds(url)
+        items = data.get('items', [])
+        parsed = {}
+        for item in items:
+            tarih = item.get('Tarih', '')
+            val = item.get('TP_REELKUR_U2')
+            if not val: continue
+            try:
+                yr, mo = tarih.split('-')
+                parsed[f"{yr}-{int(mo):02d}"] = float(val)
+            except: continue
+        print(f"      REDK: {len(parsed)} obs")
+        return parsed
+    except Exception as e:
+        print(f"      REDK: HATA - {e}")
+        return {}
+
+def fetch_iya():
+    """TCMB İktisadi Yönelim Anketi — imalat sanayi beklenti göstergeleri."""
+    print("[9] TCMB EVDS - İYA Güven Endeksi...")
+    series_map = {
+        'uretim_beklenti': ('TP.IYA2.Y4', 'Üretim hacmi gelecek 3 ay'),
+        'genel_gidisat': ('TP.IYA2.Y2', 'Genel gidişat gelecek 3 ay'),
+        'siparis': ('TP.IYA2.Y5', 'Toplam sipariş miktarı son 3 ay'),
+        'ihracat_siparis': ('TP.IYA2.Y6', 'İhracat sipariş miktarı son 3 ay'),
+    }
+    result = {}
+    for key, (code, desc) in series_map.items():
+        try:
+            field = code.replace('.', '_')
+            url = (f"series={code}"
+                   f"&startDate=01-01-2015&endDate=01-06-2030"
+                   f"&type=json&frequency=5&aggregationTypes=avg")
+            data = fetch_evds(url)
+            items = data.get('items', [])
+            parsed = {}
+            for item in items:
+                tarih = item.get('Tarih', '')
+                val = item.get(field)
+                if not val: continue
+                try:
+                    yr, mo = tarih.split('-')
+                    parsed[f"{yr}-{int(mo):02d}"] = float(val)
+                except: continue
+            if parsed:
+                result[key] = {'data': parsed, 'label': desc}
+                print(f"      {desc}: {len(parsed)} obs")
+        except Exception as e:
+            print(f"      {desc}: HATA - {e}")
+    return result
+
 # ─── ANA ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("=" * 60)
@@ -198,6 +256,8 @@ if __name__ == "__main__":
     cache['kko']         = fetch_kko()
     cache['ciro']        = fetch_ciro()
     cache['ucretli']     = fetch_ucretli()
+    cache['redk']        = fetch_redk()
+    cache['iya']         = fetch_iya()
     cache['meta']        = {
         'created_at': datetime.now().isoformat(),
         'start':      START,

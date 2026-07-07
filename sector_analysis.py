@@ -187,10 +187,41 @@ def fallback_report(nace, fig1, fig2, fig3, fig4, fig5, iso_agg=None, fig6=None,
             s += f" Sektörün medyan FAVÖK marjı %{_tr_num(iso_agg['favok_marj_med'])} olarak hesaplanmıştır."
         out.append(s)
 
+    # ── SEKIL7: Ciro ──
+    ciro = _first_ser(fig6)
+    cp, cv = _last(ciro)
+    if cv is not None:
+        out.append("[SEKIL7]")
+        s = (f"{_tr_donem(cp)} itibarıyla {sector} sektörü ciro endeksi, bir önceki yılın "
+             f"aynı dönemine göre %{_tr_num(abs(cv))} oranında {_yon(cv)} kaydetmiştir.")
+        ufe = _first_ser(fig5)
+        _, usv = _last(ufe)
+        if usv is not None:
+            reel = ((1 + cv/100.0) / (1 + usv/100.0) - 1) * 100.0
+            s += (f" Nominal ciro değişiminin enflasyondan arındırılmış reel karşılığı "
+                  f"%{_tr_num(reel)} olarak hesaplanmakta olup, sektörde reel "
+                  f"{'büyümeye' if reel >= 0 else 'daralmaya'} işaret etmektedir.")
+        out.append(s)
+
+    # ── SEKIL8: İstihdam ──
+    emp = _first_ser(fig7)
+    ep, ev = _last(emp)
+    if ev is not None:
+        out.append("[SEKIL8]")
+        s = (f"{_tr_donem(ep)} döneminde {sector} sektöründe ücretli çalışan sayısı, "
+             f"bir önceki yılın aynı dönemine göre %{_tr_num(abs(ev))} oranında {_yon(ev)} göstermiştir.")
+        if pv is not None:
+            verim = pv - ev
+            s += (f" Üretim değişimi (%{_tr_num(pv)}) ile istihdam değişimi (%{_tr_num(ev)}) "
+                  f"birlikte değerlendirildiğinde, sektörde işgücü verimliliğinin yaklaşık "
+                  f"{_tr_num(abs(verim))} puan {'iyileştiği' if verim >= 0 else 'gerilediği'} "
+                  f"gözlemlenmektedir.")
+        out.append(s)
+
     return "\n".join(out)
 
 
-def summarize_data(nace, fig1, fig2, fig3, fig4, fig5):
+def summarize_data(nace, fig1, fig2, fig3, fig4, fig5, fig6=None, fig7=None):
     """5 sekildeki veriyi LLM icin ozet metin haline getirir."""
     def last_n(data_dict, n=12):
         out = {}
@@ -252,6 +283,16 @@ def summarize_data(nace, fig1, fig2, fig3, fig4, fig5):
         lines.append('\n=== SEKIL 5: UFE Yillik Degisim (%) ===')
         for lbl, pts in last_n(fig5, 6).items():
             lines.append(f'  {lbl}: son={fmt_son(pts)}')
+
+    if fig6:
+        lines.append('\n=== SEKIL 6b: Ciro Endeksi (YoY %) ===')
+        for lbl, pts in last_n(fig6, 12).items():
+            lines.append(f'  {lbl}: son={fmt_son(pts)}, trend={trend(pts)}')
+
+    if fig7:
+        lines.append('\n=== SEKIL 7b: Istihdam / Ucretli Calisan (YoY %) ===')
+        for lbl, pts in last_n(fig7, 12).items():
+            lines.append(f'  {lbl}: son={fmt_son(pts)}, trend={trend(pts)}')
 
     return '\n'.join(lines)
 
@@ -320,7 +361,7 @@ def generate_analysis(nace, fig1, fig2, fig3, fig4, fig5, iso_agg=None,
     kisa=True → her bölümde daha az, öz madde (Kısa Özet stili).
     """
     sector = SECTOR_NAMES.get(nace, nace)
-    ozet   = summarize_data(nace, fig1, fig2, fig3, fig4, fig5)
+    ozet   = summarize_data(nace, fig1, fig2, fig3, fig4, fig5, fig6=fig6, fig7=fig7)
     ozet  += _derived_metrics_text(fig1, fig5, fig6, fig7)
 
     iso_blok = ''
@@ -383,6 +424,15 @@ etkisine değin. (Örnek üslup: "... ÜFE'si imalat ÜFE'si ile paralel seyretm
 toplam üretimden satışlar ve ihracat büyüklüğü, kârlılık ve yoğunlaşmayı kurumsal
 yatırımcı bakışıyla değerlendir.
 ''' if iso_agg else ''}
+[SEKIL7]
+Ciro endeksi paragrafı. Nominal ciro değişimini, reel ciro (ÜFE ile deflate) etkisini
+ve imalat geneli ile karşılaştırmayı yorumla.
+
+[SEKIL8]
+İstihdam paragrafı. Ücretli çalışan sayısı değişimini, üretim ve verimlilik ilişkisini
+analiz et. İstihdam artıyorken üretim düşüyorsa verimlilik kaybına, tersi durumda
+verimlilik artışına dikkat çek.
+
 Sadece istenen etiketleri döndür. Madde işareti ve markdown yıldızı (**) yasak."""
 
     # Yanit GERCEK etiket satirlari + dolu Turkce icerik icermeli.
