@@ -10,3 +10,5 @@ test_llm.py
 *.docx
 _charts_preview/
 _wtest/
+prodtr_source/
+*.json

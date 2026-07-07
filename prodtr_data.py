@@ -1,0 +1,217 @@
+# -*- coding: utf-8 -*-
+"""
+TÜİK Sanayi Ürün İstatistikleri (PRODTR) 2005-2025 veri modülü.
+
+Ürün bazlı üretim miktarı, satış değeri, satış miktarı ve girişim sayısını
+NACE sektörüyle eşleştirir (PRODTR kodunun ilk 2 hanesi = NACE bölümü).
+Ayrıca GTİP↔PRODTR eşleme tablosunu sağlar.
+
+Onbellek (prodtr_cache.pkl) repo ile gelir; ham xlsx dosyaları yalnızca
+onbelleği yeniden üretmek için gerekir (prodtr_source/ klasörü).
+
+Kullanım:
+  from prodtr_data import sector_products
+  agg = sector_products('C13')   # sektörün ürün özeti
+"""
+import os, pickle, warnings
+import pandas as pd
+import numpy as np
+
+warnings.filterwarnings('ignore')
+
+BASE = os.path.dirname(__file__)
+CACHE = os.path.join(BASE, 'prodtr_cache.pkl')
+SRC   = os.path.join(BASE, 'prodtr_source', 'prodtr.xlsx')
+GTIP  = os.path.join(BASE, 'prodtr_source', 'gtip_prodtr.xlsx')
+
+METRICS = {
+    'uretim': 'Üretim Miktarı',
+    'satis_deger': 'Satış Değeri',
+    'satis_miktar': 'Satış Miktarı',
+    'girisim': 'Girişim Sayısı',
+}
+
+
+def _num(v):
+    """'c' (gizli), '-', boş → None; sayısal → float."""
+    if v is None: return None
+    s = str(v).strip()
+    if s in ('', 'c', 'C', '-', 'nan', 'None', ':'):
+        return None
+    try:
+        return float(str(v).replace(',', '.'))
+    except Exception:
+        return None
+
+
+def _nace_of(code):
+    """'13.10.10.00.00' → 'C13' (imalat 10-33), aksi halde None."""
+    try:
+        d2 = int(str(code).split('.')[0])
+        return f'C{d2}' if 10 <= d2 <= 33 else None
+    except Exception:
+        return None
+
+
+def build_cache(force=False):
+    if os.path.exists(CACHE) and not force:
+        return
+    if not os.path.exists(SRC):
+        raise FileNotFoundError(f'PRODTR kaynak yok: {SRC}')
+
+    kl = pd.read_excel(SRC, sheet_name='Kod Listesi', header=0)
+    kod_c = kl.columns[0]
+    kl = kl.rename(columns={kod_c: 'kod'})
+    kl['kod'] = kl['kod'].astype(str).str.strip()
+    desc = {r['kod']: {'duzey': r['Düzey'], 'tanim': str(r['Tanım']).strip(),
+                       'birim': str(r.get('Ölçü Birimi', '')).strip()}
+            for _, r in kl.iterrows()}
+
+    # Metrik sayfaları → {kod: {yil: deger}}
+    data = {}
+    years_all = set()
+    for key, sheet in METRICS.items():
+        df = pd.read_excel(SRC, sheet_name=sheet, header=0)
+        code_col = df.columns[0]
+        year_cols = [c for c in df.columns if str(c).strip().isdigit()]
+        years_all |= {int(str(c).strip()) for c in year_cols}
+        m = {}
+        for _, row in df.iterrows():
+            code = str(row[code_col]).strip()
+            series = {}
+            for yc in year_cols:
+                v = _num(row[yc])
+                if v is not None:
+                    series[int(str(yc).strip())] = v
+            if series:
+                m[code] = series
+        data[key] = m
+
+    # GTİP → PRODTR eşleme
+    gtip_map = {}
+    try:
+        g = pd.read_excel(GTIP, sheet_name=0, header=1)
+        g.columns = [str(c).strip() for c in g.columns]
+        gc = [c for c in g.columns if 'GT' in c.upper()]
+        pc = [c for c in g.columns if 'PRODTR' in c.upper()]
+        if gc and pc:
+            for _, r in g.iterrows():
+                gt = str(r[gc[0]]).strip(); pr = str(r[pc[0]]).strip()
+                if gt and gt != '-' and pr and pr != 'nan':
+                    gtip_map.setdefault(pr, []).append(gt)
+    except Exception as e:
+        print(f'[prodtr] GTİP eşleme atlandı: {e}')
+
+    cache = {
+        'desc': desc,
+        'data': data,
+        'gtip_map': gtip_map,
+        'years': sorted(years_all),
+        'meta': {'built': pd.Timestamp.now().isoformat()},
+    }
+    with open(CACHE, 'wb') as f:
+        pickle.dump(cache, f)
+    print(f'[prodtr] cache yazıldı: {len(desc)} kod, {len(years_all)} yıl')
+
+
+_C = None
+def _load():
+    global _C
+    if _C is None:
+        build_cache()
+        with open(CACHE, 'rb') as f:
+            _C = pickle.load(f)
+    return _C
+
+
+def _last_val(series):
+    if not series: return None, None
+    y = max(series)
+    return y, series[y]
+
+
+def sector_products(nace, top_n=12):
+    """
+    Sektörün (PRODTR düzeyi) ürün özeti.
+    Döner: dict — yoksa None.
+    """
+    c = _load()
+    if nace == 'C':
+        prefixes = [f'{i:02d}' for i in range(10, 34)]
+    else:
+        prefixes = [nace.lstrip('C')]
+
+    desc, data = c['desc'], c['data']
+    sd = data.get('satis_deger', {})
+    ur = data.get('uretim', {})
+    gr = data.get('girisim', {})
+
+    # PRODTR düzeyi + sektöre ait kodlar
+    codes = [k for k, meta in desc.items()
+             if meta.get('duzey') == 'PRODTR'
+             and any(k.startswith(p + '.') or k.startswith(p) and _nace_of(k) ==
+                     (nace if nace != 'C' else _nace_of(k)) for p in prefixes)
+             and _nace_of(k) is not None
+             and (nace == 'C' or _nace_of(k) == nace)]
+    if not codes:
+        return None
+
+    son_yil = max(c['years']) if c['years'] else None
+
+    # Ürünleri son yıl satış değerine göre sırala
+    rows = []
+    for k in codes:
+        sv = sd.get(k, {})
+        uv = ur.get(k, {})
+        gv = gr.get(k, {})
+        sy, sval = _last_val(sv)
+        _, uval = _last_val(uv)
+        _, gval = _last_val(gv)
+        rows.append({
+            'kod': k,
+            'tanim': desc[k]['tanim'],
+            'birim': desc[k].get('birim', ''),
+            'satis_deger': sval,
+            'satis_yil': sy,
+            'uretim': uval,
+            'girisim': int(gval) if gval else None,
+            'seri_satis': sv,
+            'seri_uretim': uv,
+        })
+
+    with_sales = [r for r in rows if r['satis_deger'] is not None]
+    with_sales.sort(key=lambda r: r['satis_deger'], reverse=True)
+
+    out = {
+        'nace': nace,
+        'yil': son_yil,
+        'urun_sayisi': len(codes),
+        'veri_urun': len(with_sales),
+        'toplam_satis': sum(r['satis_deger'] for r in with_sales) or 0.0,
+        'toplam_girisim': sum(r['girisim'] for r in rows if r['girisim']) or 0,
+        'top': with_sales[:top_n],
+        'all_rows': rows,
+    }
+    # Sektör toplam satış trendi (yıllara göre, tüm ürünler toplamı)
+    trend = {}
+    for k in codes:
+        for y, v in sd.get(k, {}).items():
+            trend[y] = trend.get(y, 0.0) + v
+    out['satis_trend'] = dict(sorted(trend.items()))
+    return out
+
+
+def gtip_for_product(prodtr_code):
+    """PRODTR kodu için eşleşen GTİP kodları."""
+    return _load()['gtip_map'].get(str(prodtr_code).strip(), [])
+
+
+if __name__ == '__main__':
+    build_cache(force=True)
+    for code in ['C13', 'C20', 'C29']:
+        a = sector_products(code)
+        if a:
+            print(f"\n{code}: {a['urun_sayisi']} ürün ({a['veri_urun']} veri), "
+                  f"toplam satış {a['toplam_satis']/1e9:.1f} milyar TL ({a['yil']})")
+            for t in a['top'][:3]:
+                print(f"   {t['kod']} · {t['tanim'][:45]} → {(t['satis_deger'] or 0)/1e9:.2f} mlr TL")

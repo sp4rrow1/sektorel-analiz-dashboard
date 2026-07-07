@@ -529,6 +529,16 @@ def generate(nace_code, out_dir=None, with_analysis=True):
     except Exception as e:
         print(f"-> ISO verisi atlandi: {e}")
 
+    # ─── PRODTR ürün verisi ──────────────────────────────────────────────────
+    prodtr_agg = None
+    try:
+        from prodtr_data import sector_products
+        prodtr_agg = sector_products(nace)
+        if prodtr_agg:
+            print(f"-> PRODTR: {prodtr_agg['urun_sayisi']} ürün ({prodtr_agg['yil']})")
+    except Exception as e:
+        print(f"-> PRODTR verisi atlandi: {e}")
+
     print("\n-> Excel olusturuluyor...")
     wb, out = build_excel(nace, f1, f2, f3, f4, f5, out_dir, save=False)
 
@@ -580,6 +590,7 @@ def generate(nace_code, out_dir=None, with_analysis=True):
             out_dir=out_dir,
             iso_agg=iso_agg,
             news_analysis=news_text,
+            prodtr_agg=prodtr_agg,
         )
         print(f"Word kaydedildi: {word_file}")
 

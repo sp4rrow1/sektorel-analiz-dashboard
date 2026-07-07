@@ -819,7 +819,7 @@ with st.sidebar:
       <div class="side-meta-row"><span>Güncelleme</span><b>{cache_date}</b></div>
       <div class="side-meta-row"><span>Kapsam</span><b>C10–C33</b></div>
       <div class="side-meta-row"><span>Kaynaklar</span>
-        <span class="side-pill">7 set</span></div>
+        <span class="side-pill">9 set</span></div>
     </div>""", unsafe_allow_html=True)
     if st.button("🔄 Önbelleği Yenile", use_container_width=True):
         st.cache_resource.clear()
@@ -862,6 +862,11 @@ with st.spinner("Hesaplanıyor…"):
         f8 = sector_iso(nace)
     except Exception:
         f8 = None
+    try:
+        from prodtr_data import sector_products
+        f9 = sector_products(nace)
+    except Exception:
+        f9 = None
 
 # ─── SIDEBAR: VERI INDIR (figler hazir olduktan sonra) ──────────────────────────
 with st.sidebar:
@@ -879,6 +884,13 @@ with st.sidebar:
                 df.sort_index().round(2).to_excel(xw, sheet_name=name[:31])
             if f8 is not None:
                 f8["firmalar"].to_excel(xw, sheet_name="ISO500", index=False)
+            if f9 is not None and f9.get("all_rows"):
+                pdf = pd.DataFrame([{
+                    "PRODTR": r["kod"], "Urun": r["tanim"],
+                    "Satis_TL": r["satis_deger"], "Uretim": r["uretim"],
+                    "Birim": r["birim"], "Girisim": r["girisim"],
+                } for r in f9["all_rows"]])
+                pdf.to_excel(xw, sheet_name="Urunler_PRODTR", index=False)
         return buf.getvalue()
     st.markdown('<div class="side-label">Dışa Aktar</div>', unsafe_allow_html=True)
     st.download_button("⬇ Excel Veri (.xlsx)", data=_xlsx_bytes(),
@@ -999,7 +1011,7 @@ tabs = st.tabs([
     "🏭  Üretim", "🌍  Dış Ticaret",
     "⚙️  Kapasite", "💰  Maliyet Baskısı", "📈  Ciro", "👥  İstihdam",
     "🏆  İSO 500", "📰  Haber & Risk", "📐  Analist Görünümü",
-    "📘  Metodoloji",
+    "🧴  Ürün Detayı", "📘  Metodoloji",
 ])
 
 # ── TAB 0: GENEL BAKIŞ ───────────────────────────────────────────────────────────
@@ -2320,8 +2332,98 @@ with tabs[9]:
                     'toplam imalat sanayii seçiliyken bu bölüm devre dışıdır.</div>',
                     unsafe_allow_html=True)
 
-# ── TAB 10: METODOLOJİ ──────────────────────────────────────────────────────────
+# ── TAB 10: ÜRÜN DETAYI (PRODTR) ─────────────────────────────────────────────────
 with tabs[10]:
+    if f9:
+        yil9 = f9["yil"]
+        sec_title(f"Ürün Detayı — {sector_tr}",
+                  f"TÜİK Sanayi Ürün İstatistikleri (PRODTR) · fiziksel ürün bazında üretim ve satış · {yil9}")
+
+        pc = st.columns(4)
+        kpi_card(pc[0], "Ürün Çeşidi", f"{f9['urun_sayisi']}",
+                 f"{f9['veri_urun']} üründe veri var", icon="🧴")
+        kpi_card(pc[1], "Toplam Satış", f"₺{f9['toplam_satis']/1e9:,.0f} mlr".replace(",", "."),
+                 f"{yil9} · ürün satış değeri", icon="💰")
+        kpi_card(pc[2], "Girişim", f"{f9['toplam_girisim']:,.0f}".replace(",", "."),
+                 "ürün üreten girişim (top.)", icon="🏢")
+        _topurun = f9["top"][0]["tanim"][:22] + "…" if f9["top"] else "—"
+        kpi_card(pc[3], "En Büyük Ürün",
+                 f"₺{(f9['top'][0]['satis_deger'] or 0)/1e9:,.1f} mlr".replace(",", ".") if f9["top"] else "—",
+                 _topurun, icon="🥇")
+
+        st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+        pl, pr = st.columns([5, 4], gap="large")
+
+        with pl:
+            chart_head(f"En Büyük 12 Ürün", f"Satış değeri, milyar ₺ · {yil9}")
+            top = f9["top"][:12][::-1]
+            if top:
+                fig = go.Figure(go.Bar(
+                    y=[f"{t['kod'].split('.',2)[0]}.{t['kod'].split('.')[1]} · {t['tanim'][:34]}"
+                       + ("…" if len(t['tanim']) > 34 else "") for t in top],
+                    x=[(t['satis_deger'] or 0)/1e9 for t in top],
+                    orientation="h", marker_color=BRAND, marker_line_width=0,
+                    marker=dict(cornerradius=3),
+                    text=[f"{(t['satis_deger'] or 0)/1e9:,.1f}".replace(",", ".") for t in top],
+                    textposition="outside", cliponaxis=False,
+                    textfont=dict(size=10, family="Inter"),
+                    customdata=[[t['tanim'], t['girisim'] or "—"] for t in top],
+                    hovertemplate="<b>%{customdata[0]}</b><br>Satış: ₺%{x:.2f} mlr · "
+                                  "Girişim: %{customdata[1]}<extra></extra>",
+                    width=0.7,
+                ))
+                fig.update_layout(**LAYOUT, height=max(360, 30*len(top)+60),
+                                  showlegend=False, hovermode="closest",
+                                  margin=dict(l=8, r=52, t=8, b=30))
+                fig.update_xaxes(showticklabels=False, showline=False)
+                fig.update_yaxes(showgrid=False, tickfont=dict(size=9.5, color=INK_SOFT))
+                st.plotly_chart(fig, use_container_width=True, config=NOBAR)
+            source("Kaynak: TÜİK — Sanayi Ürün İstatistikleri Veri Tabanı (PRODTR, 2005–2025)")
+
+        with pr:
+            chart_head("Sektör Satış Değeri Trendi", "Tüm ürünler toplamı · milyar ₺")
+            tr = f9.get("satis_trend", {})
+            if tr:
+                yrs = sorted(tr.keys())
+                fig2 = go.Figure(go.Scatter(
+                    x=[str(y) for y in yrs], y=[tr[y]/1e9 for y in yrs],
+                    mode="lines", line=dict(color=BRAND, width=2.6, shape="spline", smoothing=.6),
+                    fill="tozeroy", fillcolor="rgba(37,99,235,.07)",
+                    hovertemplate="%{x}: <b>₺%{y:.0f} mlr</b><extra></extra>"))
+                fig2.update_layout(**LAYOUT, height=300, showlegend=False)
+                fig2.update_yaxes(ticksuffix="")
+                st.plotly_chart(fig2, use_container_width=True, config=NOBAR)
+                st.markdown('<div class="src">Gizli (c) beyan edilen ürünler toplama dahil edilmez; '
+                            'seriler alt sınır niteliğindedir.</div>', unsafe_allow_html=True)
+
+        with st.expander(f"📋 Tüm ürünler ({f9['urun_sayisi']}) — üretim, satış, girişim, GTİP"):
+            try:
+                from prodtr_data import gtip_for_product
+            except Exception:
+                gtip_for_product = lambda x: []
+            rows = []
+            for r in sorted(f9["all_rows"],
+                            key=lambda x: (x["satis_deger"] or -1), reverse=True):
+                gt = gtip_for_product(r["kod"])
+                rows.append({
+                    "PRODTR Kodu": r["kod"],
+                    "Ürün": r["tanim"],
+                    "Satış (mlr ₺)": round((r["satis_deger"] or 0)/1e9, 3) if r["satis_deger"] else None,
+                    "Üretim": r["uretim"],
+                    "Birim": r["birim"],
+                    "Girişim": r["girisim"],
+                    "GTİP (örnek)": gt[0] if gt else "",
+                })
+            st.dataframe(pd.DataFrame(rows).set_index("PRODTR Kodu"),
+                         use_container_width=True, height=420)
+        source(f"Kaynak: TÜİK Sanayi Ürün İstatistikleri (PRODTR) + GTİP↔PRODTR 2018 eşleme tablosu · "
+               f"'c' = gizli (açıklanmayan) değer")
+    else:
+        st.info("Bu sektör için PRODTR ürün istatistiği bulunamadı "
+                "(veya prodtr_cache.pkl eksik).")
+
+# ── TAB 11: METODOLOJİ ──────────────────────────────────────────────────────────
+with tabs[11]:
     sec_title("Metodoloji & Veri Kaynakları",
               "Dashboard'ta kullanılan tüm veri kaynakları, hesaplama yöntemleri ve türev göstergeler")
 
@@ -2370,7 +2472,14 @@ with tabs[10]:
         NACE kodu eşlemesiyle sektöre ait firmalar filtrelenir. Üretimden satışlar (₺),
         ihracat ($), çalışan sayısı, FAVÖK marjı gibi kurumsal metrikler hesaplanır.</p>
 
-        <div class="r-head">8. Google News RSS</div>
+        <div class="r-head">8. TÜİK — Sanayi Ürün İstatistikleri (PRODTR)</div>
+        <p class="r-para">Kaynak: TÜİK Sanayi Ürün İstatistikleri Veri Tabanı (2005–2025, Excel).<br>
+        PRODTR ürün kodunun ilk 2 hanesi NACE bölümüne eşlenir (örn. 13.xx → C13).
+        Ürün bazında üretim miktarı, satış değeri (₺) ve girişim sayısı gösterilir;
+        GTİP↔PRODTR 2018 tablosuyla gümrük tarife kodlarına bağlanır.
+        <code>c</code> = gizli (açıklanmayan) değer; toplamlar alt sınır niteliğindedir.</p>
+
+        <div class="r-head">9. Google News RSS</div>
         <p class="r-para">Sektöre özel anahtar kelimelerle Google News RSS akışından son haberler çekilir.
         Zaman filtresi (24 saat – 1 yıl) Google'ın <code>when:</code> operatörüyle sunucu tarafında uygulanır.</p>
         </div>
@@ -2535,7 +2644,8 @@ if "rapor_text" in st.session_state and st.session_state.get("rapor_nace") == na
             chart_paths = generate_all_charts(nace, f1, f2, f3, f4, f5, tmp, iso_agg=f8)
             build_word_report(nace, f1, f2, f3, f4, f5,
                               analysis_text=analysis, chart_paths=chart_paths,
-                              out_dir=tmp, iso_agg=f8, news_analysis=news_txt)
+                              out_dir=tmp, iso_agg=f8, news_analysis=news_txt,
+                              prodtr_agg=f9)
             docs = glob.glob(os.path.join(tmp, "*.docx"))
             if docs:
                 with open(docs[0], "rb") as fh:
@@ -2555,6 +2665,6 @@ if "rapor_text" in st.session_state and st.session_state.get("rapor_nace") == na
 st.markdown(f"""
 <div class="app-foot">
   TÜİK SDMX REST API v1.5<span class="sep">·</span>TCMB EVDS<span class="sep">·</span>
-  Önbellek: {cache_date}<span class="sep">·</span>7 veri seti · 24 sektör · 1260 NACE kodu
+  Önbellek: {cache_date}<span class="sep">·</span>9 veri seti · 24 sektör · PRODTR ürün detayı
 </div>
 """, unsafe_allow_html=True)

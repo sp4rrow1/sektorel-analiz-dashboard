@@ -188,6 +188,38 @@ def _kpi_table(doc, fig1, fig3, fig4, fig5):
         _set_cell_fill(c1, CLR_PANEL)
     return tbl
 
+# ─── PRODTR ÜRÜN TABLOSU ─────────────────────────────────────────────────────
+def _prodtr_table(doc, agg):
+    """İlk 10 ürünü satış değerine göre tabloya döker (İSO tablosu ile aynı stil)."""
+    top = (agg or {}).get('top') or []
+    if not top:
+        return
+    yil = agg.get('yil', '')
+    headers = ['Sıra', 'Ürün (PRODTR)', f'Satış Değeri (Milyar TL, {yil})', 'Girişim']
+    tbl = doc.add_table(rows=1, cols=len(headers))
+    tbl.alignment = 1
+    for ci, h in enumerate(headers):
+        c = tbl.rows[0].cells[ci]; c.text = ''
+        p = c.paragraphs[0]; p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        _run(p, h, bold=True, size_pt=8, color=CLR_WHITE)
+        _set_cell_fill(c, CLR_HEADER_BG)
+    for i, t in enumerate(top[:10], 1):
+        row = tbl.add_row().cells
+        sv = (t.get('satis_deger') or 0) / 1e9
+        vals = [str(i), t.get('tanim', '')[:70],
+                f"{sv:,.2f}".replace(",", "\x00").replace(".", ",").replace("\x00", "."),
+                str(t.get('girisim') or '—')]
+        aligns = [WD_ALIGN_PARAGRAPH.CENTER, WD_ALIGN_PARAGRAPH.LEFT,
+                  WD_ALIGN_PARAGRAPH.RIGHT, WD_ALIGN_PARAGRAPH.CENTER]
+        for ci, (v, al) in enumerate(zip(vals, aligns)):
+            c = row[ci]; c.text = ''
+            p = c.paragraphs[0]; p.alignment = al
+            _run(p, v, size_pt=8, color=CLR_BODY)
+            if i % 2 == 0:
+                _set_cell_fill(c, CLR_PANEL)
+    _table_borders(tbl)
+    return tbl
+
 # ─── İSO FIRMA TABLOSU (örnek belge formatı) ─────────────────────────────────
 def _iso_table(doc, iso_agg):
     """İlk 10 kuruluşu örnek belgedeki tablo düzeninde ekler."""
@@ -275,7 +307,7 @@ def bullets_from_text(text):
 # ─── ANA RAPOR URETICI ────────────────────────────────────────────────────────
 def build_word_report(nace, fig1, fig2, fig3, fig4, fig5,
                       analysis_text, chart_paths, out_dir=None, iso_agg=None,
-                      news_analysis=None):
+                      news_analysis=None, prodtr_agg=None):
     """
     Kimteks formatiyla Word raporu uretir.
     analysis_text: LLM'den gelen [TAG] bolumlu Turkce metin
@@ -413,6 +445,24 @@ def build_word_report(nace, fig1, fig2, fig3, fig4, fig5,
 
         # Firma tablosu (örnek belgedeki İSO tablosu muadili)
         _iso_table(doc, iso_agg)
+        _blank(doc, 6)
+
+    # ─── ÜRÜN DETAYI (PRODTR) ────────────────────────────────────────────────
+    if prodtr_agg and prodtr_agg.get('top'):
+        yilp = prodtr_agg.get('yil', '')
+        bh = doc.add_paragraph()
+        _para_spacing(bh, before=160, after=100)
+        _run(bh, 'Sektörün Ürün Bazında Görünümü', bold=True, size_pt=11, color=CLR_BODY)
+        def _tl(v):
+            return f"{v:,.1f}".replace(",", "\x00").replace(".", ",").replace("\x00", ".")
+        _yorum_para(doc,
+            f"TÜİK Sanayi Ürün İstatistikleri (PRODTR) verilerine göre sektörde "
+            f"{prodtr_agg['urun_sayisi']} farklı ürün çeşidi tanımlı olup, {yilp} yılında "
+            f"beyan edilen toplam ürün satış değeri {_tl(prodtr_agg['toplam_satis']/1e9)} milyar "
+            f"TL düzeyindedir. En yüksek satış değerine sahip ürün "
+            f"“{prodtr_agg['top'][0]['tanim']}” olup "
+            f"{_tl((prodtr_agg['top'][0]['satis_deger'] or 0)/1e9)} milyar TL ile öne çıkmaktadır.")
+        _prodtr_table(doc, prodtr_agg)
         _blank(doc, 6)
 
     # ─── SEKTÖREL BEKLENTİLER VE RİSK ANALİZİ (haber sentezi) ────────────────
