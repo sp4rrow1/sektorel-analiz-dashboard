@@ -1761,14 +1761,11 @@ with tabs[7]:
     if f8:
         # ── Yıl seçimi ──
         _years = f8.get("available_years") or [f8["yil"]]
-        if "iso_year" in st.session_state and st.session_state["iso_year"] not in _years:
-            del st.session_state["iso_year"]
 
         ty1, ty2 = st.columns([3, 1])
         with ty2:
             sel_year = st.selectbox("İSO yılı", _years,
                                     format_func=lambda y: f"{y} listesi",
-                                    key="iso_year",
                                     label_visibility="collapsed")
         # Seçilen yıl en güncelden farklıysa o yılın kesitini yeniden hesapla
         if sel_year != f8["yil"]:
@@ -1937,7 +1934,7 @@ with tabs[8]:
                   f"{sector_tr} · Google News taraması + yapay zekâ sentezi")
     with th2:
         tr_label = st.selectbox("Zaman aralığı", list(TIME_RANGES.keys()), index=2,
-                                key="news_time", label_visibility="collapsed")
+                                label_visibility="collapsed")
         if not tr_label:
             tr_label = list(TIME_RANGES.keys())[2]
             
