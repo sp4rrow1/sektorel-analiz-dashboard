@@ -1194,13 +1194,11 @@ with tabs[0]:
             for w_name, w_icon, w_desc in warnings:
                 bg = "#FEE2E2" if w_icon=="🔴" else "#FEF3C7" if w_icon=="🟡" else "#D1FAE5"
                 text_col = "#991B1B" if w_icon=="🔴" else "#92400E" if w_icon=="🟡" else "#065F46"
-                html += f'''
-                <div style="background:{bg}; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem; display:flex; align-items:center;">
-                    <span style="font-size:1.1rem; margin-right:0.6rem;">{w_icon}</span>
-                    <strong style="margin-right:0.4rem; color:{text_col}; width:75px;">{w_name}</strong>
-                    <span style="color:#475569;">{w_desc}</span>
-                </div>
-                '''
+                html += f'''<div style="background:{bg}; padding:0.5rem 0.75rem; border-radius:6px; font-size:0.85rem; display:flex; align-items:center;">
+<span style="font-size:1.1rem; margin-right:0.6rem;">{w_icon}</span>
+<strong style="margin-right:0.4rem; color:{text_col}; width:75px;">{w_name}</strong>
+<span style="color:#475569;">{w_desc}</span>
+</div>'''
             html += '</div>'
             st.markdown(html, unsafe_allow_html=True)
         else:
