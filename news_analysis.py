@@ -54,13 +54,25 @@ def _strip_html(s):
     return html.unescape(re.sub(r'\s+', ' ', s)).strip()
 
 
-def fetch_sector_news(nace, max_items=14, query_override=None):
+# Zaman dilimi seçenekleri → Google News "when:" operatörü
+TIME_RANGES = {
+    "Son 24 saat": "when:1d",
+    "Son 1 hafta": "when:7d",
+    "Son 1 ay":    "when:30d",
+    "Son 1 yıl":   "when:1y",
+    "Tümü":        "",
+}
+
+def fetch_sector_news(nace, max_items=14, query_override=None, time_range=""):
     """
     Google News RSS'ten sektör haberleri.
     query_override verilirse varsayılan sektör anahtar kelimesi yerine kullanılır.
+    time_range: Google News 'when:' operatörü (ör. 'when:7d'). Boşsa tüm zamanlar.
     Döner: [{'title','source','date','link','summary'}, ...]
     """
     kw = (query_override or '').strip() or SECTOR_KEYWORDS.get(nace, SECTOR_NAMES.get(nace, nace))
+    if time_range:
+        kw = f"{kw} {time_range}"
     q = urllib.parse.quote(kw)
     url = (f'https://news.google.com/rss/search?q={q}'
            f'&hl=tr&gl=TR&ceid=TR:tr')

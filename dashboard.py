@@ -1700,25 +1700,32 @@ with tabs[8]:
 
 # ── TAB 9: HABER & RİSK ──────────────────────────────────────────────────────────
 @st.cache_data(ttl=1800, show_spinner=False)
-def get_news(nace_code, query_override=""):
+def get_news(nace_code, query_override="", time_range=""):
     from news_analysis import fetch_sector_news
     try:
-        return fetch_sector_news(nace_code, query_override=query_override or None)
+        return fetch_sector_news(nace_code, query_override=query_override or None,
+                                 time_range=time_range)
     except Exception:
         return []
 
 with tabs[9]:
-    sec_title(f"Haber Akışı & Risk Analizi",
-              f"{sector_tr} · Google News taraması + yapay zekâ sentezi")
+    from news_analysis import TIME_RANGES
+    th1, th2 = st.columns([3, 1])
+    with th1:
+        sec_title(f"Haber Akışı & Risk Analizi",
+                  f"{sector_tr} · Google News taraması + yapay zekâ sentezi")
+    with th2:
+        tr_label = st.selectbox("Zaman aralığı", list(TIME_RANGES.keys()), index=2,
+                                key="news_time", label_visibility="collapsed")
     if news_query.strip():
         st.caption(f"🔍 Özel arama terimi kullanılıyor: **{news_query.strip()}**")
 
-    news_items = get_news(nace, news_query)
+    news_items = get_news(nace, news_query, TIME_RANGES[tr_label])
 
     nl, nr = st.columns([2, 3], gap="large")
 
     with nl:
-        chart_head("Güncel Haber Akışı", f"{len(news_items)} başlık · son 30 gün ağırlıklı")
+        chart_head("Güncel Haber Akışı", f"{len(news_items)} başlık · {tr_label.lower()}")
         if news_items:
             news_html = ""
             for it in news_items:
