@@ -245,6 +245,56 @@ if __name__ == "__main__":
     print(f"Donem: {START} - {END}")
     print("=" * 60)
 
+def fetch_dis_ticaret_fiyat():
+    print("[8] Dis Ticaret - Birim Deger Endeksi...")
+    result = {}
+    for label, df_id in [
+        ("ihracat_fiyat", "DF_IHRACAT_BIRIM_DEGER_ENDEKSI"),
+        ("ithalat_fiyat", "DF_ITHALAT_BIRIM_DEGER_ENDEKSI"),
+    ]:
+        try:
+            content = fetch_tuik(f"{BASE_URL}/data/TR,{df_id},1.0?startPeriod=2015-01&endPeriod={END}")
+            result[label] = parse_series(content)
+            print(f"      {label}: {len(result[label])} seri")
+        except:
+            pass
+    return result
+
+def fetch_saat_ucret():
+    print("[9] Calisilan Saat ve Brut Maas Endeksleri...")
+    result = {}
+    for label, df_id in [
+        ("saat", "DF_CALISILAN_SAAT_ISTATISTIKLERI_C"),
+        ("maas", "DF_BRUT_UCRET_MAAS_ISTATISTIKLERI_C"),
+    ]:
+        try:
+            content = fetch_tuik(f"{BASE_URL}/data/TR,{df_id},1.0?startPeriod={START}&endPeriod={END}")
+            result[label] = parse_series(content)
+            print(f"      {label}: {len(result[label])} seri")
+        except:
+            pass
+    return result
+
+def fetch_ydufe():
+    print("[10] YD-UFE (Yurt Disi Uretici Fiyat Endeksi)...")
+    try:
+        content = fetch_tuik(f"{BASE_URL}/data/TR,DF_YDUFE_SANAYI_V2,1.0?startPeriod={START}&endPeriod={END}")
+        s = parse_series(content)
+        print(f"      YD-UFE: {len(s)} seri yuklendi")
+        return s
+    except:
+        return []
+
+def fetch_tufe():
+    print("[11] TUFE (Tuketici Fiyat Endeksi - Harcama Gruplari)...")
+    try:
+        content = fetch_tuik(f"{BASE_URL}/data/TR,DF_TUFE_COICOP_V2,1.0?startPeriod={START}&endPeriod={END}")
+        s = parse_series(content)
+        print(f"      TUFE: {len(s)} seri yuklendi")
+        return s
+    except:
+        return []
+
     t0 = datetime.now()
 
     cache = {}
@@ -274,6 +324,10 @@ if __name__ == "__main__":
     safe_run('ucretli', fetch_ucretli)
     safe_run('redk', fetch_redk)
     safe_run('iya', fetch_iya)
+    safe_run('dis_ticaret_fiyat', fetch_dis_ticaret_fiyat)
+    safe_run('saat_ucret', fetch_saat_ucret)
+    safe_run('ydufe', fetch_ydufe)
+    safe_run('tufe', fetch_tufe)
 
     cache['meta']        = {
         'created_at': datetime.now().isoformat(),

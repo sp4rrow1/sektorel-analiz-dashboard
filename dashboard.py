@@ -539,6 +539,7 @@ from nace_config import (SECTOR_NAMES, SITC_MAP, ALL_MANUFACTURING,
 from generate_report import (
     build_sekil1, build_sekil2, build_sekil3,
     build_sekil4, build_sekil5, build_sekil6, build_sekil7,
+    build_dis_ticaret_fiyat, build_saat_ucret, build_ydufe, build_tufe
 )
 
 cache = load_data()
@@ -853,6 +854,11 @@ with st.spinner("Hesaplanıyor…"):
     f5 = build_sekil5(nace, cache["ufe"])
     f6 = build_sekil6(nace, cache["ciro"])    if "ciro"    in cache else {}
     f7 = build_sekil7(nace, cache["ucretli"]) if "ucretli" in cache else {}
+    
+    f_fiyat = build_dis_ticaret_fiyat(nace, cache.get("dis_ticaret_fiyat", {}))
+    f_su    = build_saat_ucret(nace, cache.get("saat_ucret", {}))
+    f_ydufe = build_ydufe(nace, cache.get("ydufe", []))
+    f_tufe  = build_tufe(cache.get("tufe", []))
     try:
         from iso_data import sector_iso
         f8 = sector_iso(nace)
@@ -1495,6 +1501,48 @@ with tabs[2]:
             fig_m.update_yaxes(ticksuffix=" pn")
             fig_m.add_hline(y=0, line_width=1, line_color="#CBD5E1")
             st.plotly_chart(fig_m, use_container_width=True, config=NOBAR)
+
+
+        # ── Dış Ticaret Fiyat (Birim Değer) Makası ──
+        if f_fiyat:
+            st.markdown("<div style='height:1.5rem'></div>", unsafe_allow_html=True)
+            sec_title("Birim Değer (Fiyat) Endeksi", "İhracat Fiyatı vs İthalat Fiyatı Yıllık Değişim (%) · Rekabetçilik ve Katma Değer")
+            
+            p_xs, _ = series_xy(list(f_fiyat.values())[0], ay_sayisi) if f_fiyat else ([], [])
+            if p_xs:
+                fig_p = go.Figure()
+                _p_ends = []
+                for lbl, s in f_fiyat.items():
+                    is_exp = "hracat" in lbl and "thalat" not in lbl
+                    cx, cy = series_xy(s, ay_sayisi)
+                    col = TRADE_EXP if is_exp else TRADE_IMP
+                    fig_p.add_trace(go.Scatter(
+                        x=cx, y=cy, mode="lines", name="İhracat Fiyatı" if is_exp else "İthalat Fiyatı",
+                        line=dict(color=col, width=2.4 if is_exp else 1.8, shape="spline", smoothing=.8),
+                        hovertemplate="<b>%{y:+.1f}%</b><extra>" + ("İhr. Fiyatı" if is_exp else "İth. Fiyatı") + "</extra>"
+                    ))
+                    if cx: _p_ends.append((cx[-1], cy[-1], col, "{:+.1f}%"))
+                
+                # Fiyat Makası Overlay (İhracat Fiyatı - İthalat Fiyatı)
+                if "İhracat Fiyat YoY %" in f_fiyat and "İthalat Fiyat YoY %" in f_fiyat:
+                    s_exp = dict(f_fiyat["İhracat Fiyat YoY %"])
+                    s_imp = dict(f_fiyat["İthalat Fiyat YoY %"])
+                    m_xs, m_ys = calc_diff(s_exp, s_imp, ay_sayisi)
+                    if m_xs:
+                        fig_p.add_trace(go.Bar(
+                            x=m_xs, y=m_ys, name="Fiyat Makası",
+                            marker_color=["rgba(16,185,129,.5)" if v >= 0 else "rgba(239,68,68,.5)" for v in m_ys],
+                            marker_line_width=0,
+                            hovertemplate="<b>%{y:+.1f} pn</b><extra>Fiyat Makası</extra>"
+                        ))
+
+                add_end_labels(fig_p, _p_ends)
+                fig_p.update_layout(**LAYOUT, height=320)
+                fig_p.update_xaxes(dtick=6)
+                fig_p.update_yaxes(ticksuffix="%")
+                fig_p.add_hline(y=0, line_width=1, line_color="#CBD5E1")
+                st.plotly_chart(fig_p, use_container_width=True, config=NOBAR)
+                source("Kaynak: TÜİK — Dış Ticaret Birim Değer Endeksi")
 
         source("Kaynak: TÜİK — Dış Ticaret Miktar Endeksi" + 
               (" · kesikli çizgi: karşılaştırma sektörü" if compare_nace else ""))
@@ -2429,7 +2477,8 @@ if uret:
         try:
             analysis = generate_analysis(nace, f1, f2, f3, f4, f5, iso_agg=f8,
                                          fig6=f6, fig7=f7,
-                                         kisa=(st.session_state.get("rapor_stili") == "Kısa Özet"))
+                                         kisa=(st.session_state.get("rapor_stili") == "Kısa Özet"),
+                                         f_fiyat=f_fiyat, f_su=f_su, f_ydufe=f_ydufe, f_tufe=f_tufe)
             if not analysis or not analysis.strip():
                 st.error("Rapor üretilemedi. Lütfen tekrar deneyin.")
             else:

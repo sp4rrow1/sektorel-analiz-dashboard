@@ -221,7 +221,7 @@ def fallback_report(nace, fig1, fig2, fig3, fig4, fig5, iso_agg=None, fig6=None,
     return "\n".join(out)
 
 
-def summarize_data(nace, fig1, fig2, fig3, fig4, fig5, fig6=None, fig7=None):
+def summarize_data(nace, fig1, fig2, fig3, fig4, fig5, fig6=None, fig7=None, f_fiyat=None, f_su=None, f_ydufe=None, f_tufe=None):
     """5 sekildeki veriyi LLM icin ozet metin haline getirir."""
     def last_n(data_dict, n=12):
         out = {}
@@ -294,7 +294,33 @@ def summarize_data(nace, fig1, fig2, fig3, fig4, fig5, fig6=None, fig7=None):
         for lbl, pts in last_n(fig7, 12).items():
             lines.append(f'  {lbl}: son={fmt_son(pts)}, trend={trend(pts)}')
 
-    return '\n'.join(lines)
+    if f_fiyat:
+        lines.append('
+=== EK: Dis Ticaret Fiyat (Birim Deger) Makasi ===')
+        for lbl, pts in last_n(f_fiyat, 12).items():
+            lines.append(f'  {lbl}: son={fmt_son(pts)}, trend={trend(pts)}')
+            
+    if f_su:
+        lines.append('
+=== EK: Isgucu ve Saat (YoY %) ===')
+        for lbl, pts in last_n(f_su, 12).items():
+            lines.append(f'  {lbl}: son={fmt_son(pts)}, trend={trend(pts)}')
+
+    if f_ydufe:
+        lines.append('
+=== EK: YD-UFE (Ihracat Fiyatlamasi) ===')
+        for lbl, pts in last_n(f_ydufe, 12).items():
+            lines.append(f'  {lbl}: son={fmt_son(pts)}')
+
+    if f_tufe:
+        lines.append('
+=== EK: TUFE (Tuketici Enflasyonu) ===')
+        for lbl, pts in last_n(f_tufe, 12).items():
+            lines.append(f'  {lbl}: son={fmt_son(pts)}')
+
+    return '
+'.join(lines)
+
 
 
 SYSTEM_PROMPT = """Sen Türkiye'nin önde gelen bir kalkınma ve yatırım bankasının Sektörel
@@ -361,7 +387,7 @@ def generate_analysis(nace, fig1, fig2, fig3, fig4, fig5, iso_agg=None,
     kisa=True → her bölümde daha az, öz madde (Kısa Özet stili).
     """
     sector = SECTOR_NAMES.get(nace, nace)
-    ozet   = summarize_data(nace, fig1, fig2, fig3, fig4, fig5, fig6=fig6, fig7=fig7)
+    ozet   = summarize_data(nace, fig1, fig2, fig3, fig4, fig5, fig6=fig6, fig7=fig7, f_fiyat=f_fiyat, f_su=f_su, f_ydufe=f_ydufe, f_tufe=f_tufe)
     ozet  += _derived_metrics_text(fig1, fig5, fig6, fig7)
 
     iso_blok = ''

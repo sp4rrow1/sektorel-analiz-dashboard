@@ -288,8 +288,42 @@ def build_sekil7(nace, ucretli_series):
             if best2['data']:
                 result[lbl] = best2['data']
     return result
+    return result
 
+# ─── YENI SERILER (Fiyat, Saat, YD-UFE, TUFE) ──────────────────────────────
+def build_dis_ticaret_fiyat(nace, dis_ticaret_fiyat):
+    if not dis_ticaret_fiyat: return {}
+    sitc = SITC_MAP.get(nace, 'T')
+    result = {}
+    for label, key in [("İhracat Fiyat YoY %", "ihracat_fiyat"), ("İthalat Fiyat YoY %", "ithalat_fiyat")]:
+        series = dis_ticaret_fiyat.get(key, [])
+        cands = [s for s in series if s['key'].get('DTE_SEKTOR_KODLARI') == sitc and s['key'].get('ENDEKS_DEGISIM') == '1']
+        if not cands: cands = [s for s in series if s['key'].get('DTE_SEKTOR_KODLARI') == 'T' and s['key'].get('ENDEKS_DEGISIM') == '1']
+        if cands: result[label] = max(cands, key=lambda x: len(x['data']))['data']
+    return result
 
+def build_saat_ucret(nace, cache_su):
+    if not cache_su: return {}
+    result = {}
+    for label, key in [("Saat YoY %", "saat"), ("Brüt Maaş YoY %", "maas")]:
+        series = cache_su.get(key, [])
+        cands = [s for s in series if s['key'].get('EKONOMIK_FAALIYET') == nace and s['key'].get('ENDEKS_DEGISIM') == '4']
+        if not cands: cands = [s for s in series if s['key'].get('EKONOMIK_FAALIYET') == 'C' and s['key'].get('ENDEKS_DEGISIM') == '4']
+        if cands: result[label] = max(cands, key=lambda x: len(x['data']))['data']
+    return result
+
+def build_ydufe(nace, ydufe_series):
+    if not ydufe_series: return {}
+    cands = [s for s in ydufe_series if s['key'].get('URUN_UFE_NACE_CPA') == nace and s['key'].get('YDUFE_ENDK_DGS') == '3']
+    if not cands: cands = [s for s in ydufe_series if s['key'].get('URUN_UFE_NACE_CPA') == 'C' and s['key'].get('YDUFE_ENDK_DGS') == '3']
+    if cands: return {f"YD-ÜFE YoY % — {SECTOR_NAMES.get(nace, nace)}": max(cands, key=lambda x: len(x['data']))['data']}
+    return {}
+
+def build_tufe(tufe_series):
+    if not tufe_series: return {}
+    cands = [s for s in tufe_series if s['key'].get('HRCG') == '00' and s['key'].get('TUFE_ENDK_DGS') == '3']
+    if cands: return {"TÜFE YoY % — Türkiye Geneli": max(cands, key=lambda x: len(x['data']))['data']}
+    return {}
 # ─── EXCEL ───────────────────────────────────────────────────────────────────
 def build_excel(nace, fig1, fig2, fig3, fig4, fig5, out_dir=None, save=True):
     import openpyxl
