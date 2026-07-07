@@ -826,6 +826,18 @@ with st.sidebar:
         st.cache_resource.clear()
         st.rerun()
 
+    # LLM durumu: kendi anahtar mı, ücretsiz havuz mu?
+    try:
+        from llm_client import _primary_key
+        _has_key = _primary_key() is not None
+    except Exception:
+        _has_key = False
+    _llm_txt = ("🟢 Kendi API anahtarı" if _has_key
+                else "🟡 Ücretsiz havuz (yoğunsa verilerden yazılır)")
+    st.markdown(f'<div class="side-meta-row" style="margin-top:.5rem">'
+                f'<span>LLM</span><b style="font-size:.68rem">{_llm_txt}</b></div>',
+                unsafe_allow_html=True)
+
 # ════════════════════════════════════════════════════════════════════════════════
 #  VERİ HAZIRLA
 # ════════════════════════════════════════════════════════════════════════════════

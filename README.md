@@ -31,6 +31,21 @@ set EVDS_API_KEY=...
 python cache_all.py
 ```
 
+## Güvenilir LLM (opsiyonel)
+
+Otomatik rapor varsayılan olarak ücretsiz paylaşımlı key havuzunu kullanır; havuz
+tükendiğinde rapor verilerden deterministik olarak yazılır. Her raporun tam LLM
+kalitesinde gelmesi için kendi (OpenAI-uyumlu) anahtarınızı verin:
+
+Streamlit Cloud → **Settings → Secrets**:
+```toml
+LLM_API_KEY  = "sk-..."
+LLM_BASE_URL = "https://api.openai.com/v1/chat/completions"   # veya DeepSeek/Groq
+LLM_MODEL    = "gpt-4o-mini"
+```
+Yerelde ortam değişkeni olarak da verilebilir (`LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`).
+Tanımlıysa bu anahtar havuzdan önce, öncelikli denenir.
+
 ## Kaynaklar
 
 - TÜİK SDMX REST API v1.5

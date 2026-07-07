@@ -4,10 +4,45 @@ Free LLM API Key Manager
 Her cagirdiginda github.com/alistaitsacle/free-llm-api-keys'dan
 guncel key + model ceker, OpenAI-compat proxy uzerinden istek yapar.
 """
-import urllib.request, json, re, time
+import os, urllib.request, json, re, time
 
 REPO_README = "https://raw.githubusercontent.com/alistaitsacle/free-llm-api-keys/main/README.md"
 BASE_URL    = "https://aiapiv2.pekpik.com/v1/chat/completions"
+
+
+def _primary_key():
+    """
+    Kullanicinin kendi SABIT (OpenAI-uyumlu) API anahtari — varsa ucretsiz havuzdan
+    ONCE denenir; guvenilir tam-LLM raporu icin.
+    Ortam degiskeni ya da Streamlit secrets ile ver:
+      LLM_API_KEY   (zorunlu)
+      LLM_BASE_URL  (varsayilan: OpenAI — https://api.openai.com/v1/chat/completions)
+      LLM_MODEL     (varsayilan: gpt-4o-mini)
+    Ornek saglayicilar:
+      OpenAI:   base=https://api.openai.com/v1/chat/completions          model=gpt-4o-mini
+      DeepSeek: base=https://api.deepseek.com/v1/chat/completions        model=deepseek-chat
+      Groq:     base=https://api.groq.com/openai/v1/chat/completions     model=llama-3.3-70b-versatile
+    """
+    key = os.environ.get("LLM_API_KEY", "").strip()
+    base = os.environ.get("LLM_BASE_URL", "").strip()
+    model = os.environ.get("LLM_MODEL", "").strip()
+    # Streamlit secrets (deploy'da) — ortam degiskeni yoksa oradan oku
+    if not key:
+        try:
+            import streamlit as st
+            key   = key   or str(st.secrets.get("LLM_API_KEY", "")).strip()
+            base  = base  or str(st.secrets.get("LLM_BASE_URL", "")).strip()
+            model = model or str(st.secrets.get("LLM_MODEL", "")).strip()
+        except Exception:
+            pass
+    if not key:
+        return None
+    return {
+        "key":   key,
+        "model": model or "gpt-4o-mini",
+        "base":  base or "https://api.openai.com/v1/chat/completions",
+        "budget": "kendi anahtar",
+    }
 
 # Model onceligi: en iyi -> en ucuz
 PREFERRED_MODELS = [
@@ -85,28 +120,33 @@ def call_llm(prompt, system=None, max_tokens=2000, retries=0, validate=None,
     """
     import time as _t
     _start = _t.time()
-    readme = fetch_readme()
-    rows   = parse_keys(readme)
-    if not rows:
-        raise RuntimeError("Hicbir key bulunamadi")
 
-    # Sohbet disi modelleri ele (embedding/image/tts/whisper vb. metin ureticisi degil)
+    # 1) Kullanicinin kendi sabit anahtari (varsa) — EN ONCE, guvenilir
+    queue = []
+    primary = _primary_key()
+    if primary:
+        queue.append(primary)
+
+    # 2) Ucretsiz havuz (github README)
+    try:
+        rows = parse_keys(fetch_readme())
+    except Exception:
+        rows = []
+    # Sohbet disi modelleri ele (embedding/image/tts/whisper vb.)
     SKIP = ('embedding', 'image', 'whisper', 'tts', 'audio', 'rerank', 'vision-ocr')
     rows = [r for r in rows if not any(s in r['model'].lower() for s in SKIP)]
 
-    # Oncelikli modeli bul, olmayan key varsa siradakini dene
     tried = set()
-    queue = []
     for preferred in PREFERRED_MODELS:
         for row in rows:
             if preferred.lower() in row['model'].lower() and row['key'] not in tried:
-                queue.append(row)
-                tried.add(row['key'])
-    # Kalanları da ekle
+                queue.append(row); tried.add(row['key'])
     for row in rows:
         if row['key'] not in tried:
-            queue.append(row)
-            tried.add(row['key'])
+            queue.append(row); tried.add(row['key'])
+
+    if not queue:
+        raise RuntimeError("Hicbir key bulunamadi (ne sabit anahtar ne de havuz)")
 
     messages = []
     if system:
@@ -130,8 +170,9 @@ def call_llm(prompt, system=None, max_tokens=2000, retries=0, validate=None,
                 "max_tokens": max_tokens,
                 "temperature": 0.7,
             }).encode("utf-8")
+            endpoint = row.get('base', BASE_URL)   # sabit anahtar kendi endpoint'ini kullanir
             req = urllib.request.Request(
-                BASE_URL, data=body,
+                endpoint, data=body,
                 headers={
                     "Content-Type":  "application/json",
                     "Authorization": f"Bearer {row['key']}",
