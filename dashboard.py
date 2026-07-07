@@ -2147,82 +2147,40 @@ with tabs[9]:
 
     st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
 
-    # ── Birim İşgücü Maliyeti (ULC Proxy) ──
-    u1, u2 = st.columns([3, 2], gap="large")
-    with u1:
-        chart_head("Birim İşgücü Maliyeti (ULC Proxy)",
-                   "ÜFE − Verimlilik · maliyet rekabetçiliği göstergesi")
-        _ulc = diff_series(_ufe_ser, _verim) if _ufe_ser and _verim else {}
-        if _ulc:
-            _ulc_common = sorted(_ulc.keys())[-ay_sayisi:]
-            xs_ulc = [tr_month(p) for p in _ulc_common]
-            ys_ulc = [round(_ulc.get(p, 0), 1) for p in _ulc_common]
-            fig_ulc = go.Figure()
-            fig_ulc.add_trace(go.Bar(
-                x=xs_ulc, y=ys_ulc, name="ULC Proxy",
-                marker_color=["rgba(220,38,38,.55)" if v > 0 else "rgba(5,150,105,.55)" for v in ys_ulc],
-                marker_line_width=0,
-                hovertemplate="<b>%{y:+.1f} puan</b><extra>ULC</extra>"))
-            # Bileşenleri de göster
-            if _ufe_ser and _verim:
-                ys_u = [round(_ufe_ser.get(p, 0), 1) for p in _ulc_common if p in _ufe_ser]
-                ys_v = [round(_verim.get(p, 0), 1) for p in _ulc_common if p in _verim]
-                if len(ys_u) == len(xs_ulc):
-                    fig_ulc.add_trace(go.Scatter(
-                        x=xs_ulc, y=ys_u, mode="lines", name="ÜFE",
-                        line=dict(color=AMBER, width=1.5, dash="dot", shape="spline", smoothing=.8),
-                        hovertemplate="<b>%{y:.1f}%</b><extra>ÜFE</extra>"))
-                if len(ys_v) == len(xs_ulc):
-                    fig_ulc.add_trace(go.Scatter(
-                        x=xs_ulc, y=ys_v, mode="lines", name="Verimlilik",
-                        line=dict(color=TEAL, width=1.5, dash="dot", shape="spline", smoothing=.8),
-                        hovertemplate="<b>%{y:+.1f}</b><extra>Verimlilik</extra>"))
-            fig_ulc.update_layout(**LAYOUT, height=420)
-            fig_ulc.update_xaxes(dtick=6)
-            fig_ulc.update_yaxes(ticksuffix=" pn")
-            fig_ulc.add_hline(y=0, line_width=1, line_color="#CBD5E1")
-            st.plotly_chart(fig_ulc, use_container_width=True, config=NOBAR)
-            st.markdown('<div class="src">Kırmızı bar: maliyet artışı verimliliği aşıyor (rekabet kaybı) · '
-                        'Yeşil: verimlilik maliyeti karşılıyor (rekabet kazanımı)</div>',
+    # ── REDK Overlay ──
+    chart_head("Reel Efektif Döviz Kuru & İhracat",
+               "REDK (ÜFE bazlı) vs ihracat büyümesi · rekabet etkisi")
+    _redk = cache.get("redk")
+    if _redk and _ih_ser:
+        _r_common = sorted(set(_redk) & set(_ih_ser))[-ay_sayisi:]
+        if len(_r_common) >= 6:
+            xs_rd = [tr_month(p) for p in _r_common]
+            fig_rd = go.Figure()
+            fig_rd.add_trace(go.Scatter(
+                x=xs_rd, y=[round(_ih_ser.get(p, 0), 1) for p in _r_common],
+                mode="lines", name="İhracat YoY%", yaxis="y",
+                line=dict(color=TRADE_EXP, width=2.2, shape="spline", smoothing=.8),
+                hovertemplate="<b>%{y:+.1f}%</b><extra>İhracat</extra>"))
+            fig_rd.add_trace(go.Scatter(
+                x=xs_rd, y=[round(_redk[p], 1) for p in _r_common],
+                mode="lines", name="REDK", yaxis="y2",
+                line=dict(color=AMBER, width=2, dash="dot", shape="spline", smoothing=.8),
+                hovertemplate="<b>%{y:.1f}</b><extra>REDK</extra>"))
+            fig_rd.update_layout(
+                **LAYOUT, height=420,
+                yaxis=dict(title=None, ticksuffix="%", side="left"),
+                yaxis2=dict(title=None, overlaying="y", side="right",
+                            showgrid=False, tickfont=dict(size=9, color=AMBER)),
+            )
+            fig_rd.update_xaxes(dtick=6)
+            st.plotly_chart(fig_rd, use_container_width=True, config=NOBAR)
+            st.markdown('<div class="src">REDK düşerken (TL değer kaybı) ihracat artışı '
+                        'beklenir · Ters korelasyon = kur duyarlılığı yüksek sektör</div>',
                         unsafe_allow_html=True)
         else:
-            st.info("ULC hesaplaması için ÜFE, üretim ve istihdam verisi gerekli.")
-
-    with u2:
-        # ── REDK Overlay ──
-        chart_head("Reel Efektif Döviz Kuru & İhracat",
-                   "REDK (ÜFE bazlı) vs ihracat büyümesi · rekabet etkisi")
-        _redk = cache.get("redk")
-        if _redk and _ih_ser:
-            _r_common = sorted(set(_redk) & set(_ih_ser))[-ay_sayisi:]
-            if len(_r_common) >= 6:
-                xs_rd = [tr_month(p) for p in _r_common]
-                fig_rd = go.Figure()
-                fig_rd.add_trace(go.Scatter(
-                    x=xs_rd, y=[round(_ih_ser.get(p, 0), 1) for p in _r_common],
-                    mode="lines", name="İhracat YoY%", yaxis="y",
-                    line=dict(color=TRADE_EXP, width=2.2, shape="spline", smoothing=.8),
-                    hovertemplate="<b>%{y:+.1f}%</b><extra>İhracat</extra>"))
-                fig_rd.add_trace(go.Scatter(
-                    x=xs_rd, y=[round(_redk[p], 1) for p in _r_common],
-                    mode="lines", name="REDK", yaxis="y2",
-                    line=dict(color=AMBER, width=2, dash="dot", shape="spline", smoothing=.8),
-                    hovertemplate="<b>%{y:.1f}</b><extra>REDK</extra>"))
-                fig_rd.update_layout(
-                    **LAYOUT, height=420,
-                    yaxis=dict(title=None, ticksuffix="%", side="left"),
-                    yaxis2=dict(title=None, overlaying="y", side="right",
-                                showgrid=False, tickfont=dict(size=9, color=AMBER)),
-                )
-                fig_rd.update_xaxes(dtick=6)
-                st.plotly_chart(fig_rd, use_container_width=True, config=NOBAR)
-                st.markdown('<div class="src">REDK düşerken (TL değer kaybı) ihracat artışı '
-                            'beklenir · Ters korelasyon = kur duyarlılığı yüksek sektör</div>',
-                            unsafe_allow_html=True)
-            else:
-                st.info("REDK verisi yetersiz (cache_all.py yeniden çalıştırılmalı).")
-        else:
-            st.info("REDK verisi için `python cache_all.py` çalıştırın — TCMB EVDS'den çekilir.")
+            st.info("REDK verisi yetersiz (cache_all.py yeniden çalıştırılmalı).")
+    else:
+        st.info("REDK verisi için `python cache_all.py` çalıştırın — TCMB EVDS'den çekilir.")
 
     st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
 
