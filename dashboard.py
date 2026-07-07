@@ -1853,14 +1853,18 @@ with tabs[8]:
     with nl:
         chart_head("Güncel Haber Akışı", f"{len(news_items)} başlık · {tr_label.lower()}")
         if news_items:
+            import html as html_lib
             news_html = ""
             for it in news_items:
+                safe_title = html_lib.escape(it['title'])
+                safe_source = html_lib.escape(it['source'])
+                safe_date = html_lib.escape(it['date'])
                 news_html += f"""
                 <div style="padding:.55rem 0;border-bottom:1px solid {LINE};">
                   <a href="{it['link']}" target="_blank" style="font-size:.83rem;font-weight:600;
-                     color:{INK};text-decoration:none;line-height:1.4;">{it['title']}</a>
+                     color:{INK};text-decoration:none;line-height:1.4;">{safe_title}</a>
                   <div style="font-size:.7rem;color:{MUTED};font-weight:500;margin-top:.15rem;">
-                    {it['source']} · {it['date']}</div>
+                    {safe_source} · {safe_date}</div>
                 </div>"""
             st.markdown(f'<div style="max-height:520px;overflow-y:auto;padding-right:.5rem;">{news_html}</div>',
                         unsafe_allow_html=True)
