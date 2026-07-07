@@ -1761,9 +1761,12 @@ with tabs[7]:
     if f8:
         # ── Yıl seçimi ──
         _years = f8.get("available_years") or [f8["yil"]]
+        if "iso_year" in st.session_state and st.session_state["iso_year"] not in _years:
+            del st.session_state["iso_year"]
+
         ty1, ty2 = st.columns([3, 1])
         with ty2:
-            sel_year = st.selectbox("İSO yılı", _years, index=0,
+            sel_year = st.selectbox("İSO yılı", _years,
                                     format_func=lambda y: f"{y} listesi",
                                     key="iso_year",
                                     label_visibility="collapsed")
@@ -1895,12 +1898,18 @@ with tabs[7]:
             tdf["Satış (mlr ₺)"] = (tdf["uretim_satis"] / 1e9).round(2)
             tdf["İhracat (mn $)"] = tdf["ihracat_musd"].round(1)
             tdf["FAVÖK %"] = tdf["favok_marj"].round(1)
+            
+            # Safe parsing for PyArrow to avoid crashes
+            tdf["sira"] = tdf["sira"].fillna(-1).astype(int).astype(str).replace("-1", "-")
+            tdf["il"] = tdf["il"].fillna("-").astype(str)
+            
             tdf = tdf.rename(columns={"sira": "Sıra", "liste": "Liste",
                                       "firma": "Kuruluş", "il": "İl",
                                       "calisan": "Çalışan"})
             st.dataframe(
                 tdf[["Sıra", "Liste", "Kuruluş", "İl", "Satış (mlr ₺)",
-                     "İhracat (mn $)", "Çalışan", "FAVÖK %"]].set_index("Sıra"),
+                     "İhracat (mn $)", "Çalışan", "FAVÖK %"]],
+                hide_index=True,
                 use_container_width=True, height=420)
 
         _nace_etiketi = "tüm imalat sanayii (C10–C33)" if nace == TOTAL_MANUFACTURING else f"NACE {nace.lstrip('C')}"
