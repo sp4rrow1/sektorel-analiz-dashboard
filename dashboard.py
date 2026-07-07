@@ -1308,8 +1308,8 @@ with tabs[1]:
     else:
         st.info("Bu sektör için üretim endeksi alt grup verisi bulunamadı.")
 
-        st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
-        with st.expander("🔍 Alt Kırılım Detayları (Sınıf Düzeyi)", expanded=False):
+    st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+    with st.expander("🔍 Alt Kırılım Detayları (Sınıf Düzeyi)", expanded=False):
         if nace == TOTAL_MANUFACTURING:
             sec_title("İmalat Sanayii Alt Sektörleri",
                       "Ana sektörler (2 haneli NACE, C10–C33) düzeyinde üretim performansı · yıl ortalaması, YoY %")
