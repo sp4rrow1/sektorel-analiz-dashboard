@@ -992,7 +992,7 @@ st.markdown("<div style='height:1.4rem'></div>", unsafe_allow_html=True)
 # ════════════════════════════════════════════════════════════════════════════════
 tabs = st.tabs([
     "📌  Genel Bakış",
-    "🏭  Üretim", "🔍  Alt Kırılımlar", "🌍  Dış Ticaret",
+    "🏭  Üretim", "🌍  Dış Ticaret",
     "⚙️  Kapasite", "💰  Maliyet Baskısı", "📈  Ciro", "👥  İstihdam",
     "🏆  İSO 500", "📰  Haber & Risk", "📐  Analist Görünümü",
     "📘  Metodoloji",
@@ -1308,94 +1308,96 @@ with tabs[1]:
     else:
         st.info("Bu sektör için üretim endeksi alt grup verisi bulunamadı.")
 
-# ── TAB 2: ALT KIRILIMLAR ────────────────────────────────────────────────────────
-with tabs[2]:
-    if nace == TOTAL_MANUFACTURING:
-        sec_title("İmalat Sanayii Alt Sektörleri",
-                  "Ana sektörler (2 haneli NACE, C10–C33) düzeyinde üretim performansı · yıl ortalaması, YoY %")
-    else:
-        sec_title("Alt Sektör Kırılımları",
-                  "Sınıf (4 haneli NACE) düzeyinde üretim performansı · yıl ortalaması, YoY %")
-    if f2:
-        secs   = sorted(f2.keys())
-        ann_by = {s: annual_avg(f2[s]) for s in secs}
-        yrs    = sorted({y for a in ann_by.values() for y in a})[-5:]
-        latest = yrs[-1]
-
-        # Son yıla göre sırala (büyükten küçüğe)
-        order  = sorted(secs, key=lambda s: ann_by[s].get(latest) if ann_by[s].get(latest) is not None else -999,
-                        reverse=False)  # yatay bar: en büyük üstte olsun diye ascending
-
-        c1, c2 = st.columns([5, 4], gap="large")
-
-        with c1:
-            chart_head(f"{latest} Performansı", "Son yıl ortalaması · sıralı")
-            vals_l  = [ann_by[s].get(latest, 0) or 0 for s in order]
-            bar_col = [POS if v >= 0 else NEG for v in vals_l]
-            fig = go.Figure()
-            fig.add_trace(go.Bar(
-                y=[wrap_name(s, 30) for s in order],
-                x=vals_l, orientation="h",
-                marker_color=bar_col, marker_line_width=0,
-                marker=dict(cornerradius=4),
-                text=[f"{v:+.1f}%" for v in vals_l],
-                textposition="outside", cliponaxis=False,
-                textfont=dict(size=11, family="Inter"),
-                hovertext=[f"{s} · {nace_name(s)}" for s in order],
-                hovertemplate="%{hovertext}<br><b>%{x:+.1f}%</b><extra></extra>",
-                width=0.6,
-            ))
-            h2 = max(300, 66 * len(order))
-            fig.update_layout(**LAYOUT, height=h2, showlegend=False, hovermode="closest",
-                              margin=dict(l=8, r=54, t=8, b=36), bargap=0.32)
-            fig.update_xaxes(ticksuffix="%", zeroline=True, zerolinecolor="#CBD5E1")
-            fig.update_yaxes(showgrid=False, tickfont=dict(size=10.5, color=INK_SOFT))
-            fig.add_vline(x=0, line_width=1, line_color="#CBD5E1")
-            st.plotly_chart(fig, use_container_width=True, config=NOBAR)
-
-        with c2:
-            chart_head("Yıllara Göre Isı Haritası", "Kırmızı: daralma · Mavi: büyüme")
-            z, txt = [], []
-            for s in order:
-                row  = [ann_by[s].get(y) for y in yrs]
-                z.append(row)
-                txt.append([f"{v:+.1f}" if v is not None else "" for v in row])
-            zmax = max((abs(v) for r in z for v in r if v is not None), default=1)
-            fig_h = go.Figure(go.Heatmap(
-                z=z, x=yrs, y=[wrap_name(s, 30) for s in order],
-                text=txt, texttemplate="%{text}",
-                textfont=dict(size=10.5, family="Inter"),
-                colorscale=[[0, "#DC2626"], [0.42, "#FEE2E2"], [0.5, "#FFFFFF"],
-                            [0.58, "#DBEAFE"], [1, BRAND]],
-                zmid=0, zmin=-zmax, zmax=zmax,
-                xgap=4, ygap=4, showscale=False,
-                hovertemplate="%{y}<br>%{x}: <b>%{z:+.1f}%</b><extra></extra>",
-            ))
-            fig_h.update_layout(**LAYOUT, height=h2, hovermode="closest",
-                                margin=dict(l=8, r=8, t=8, b=36))
-            fig_h.update_xaxes(side="bottom", showline=False, ticks="")
-            fig_h.update_yaxes(showticklabels=False, showgrid=False)
-            st.plotly_chart(fig_h, use_container_width=True, config=NOBAR)
-
+        st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+        with st.expander("🔍 Alt Kırılım Detayları (Sınıf Düzeyi)", expanded=False):
         if nace == TOTAL_MANUFACTURING:
-            source("Kaynak: TÜİK — Sanayi Üretim Endeksi, Ana Endeksler (2 haneli NACE, C10–C33)")
+            sec_title("İmalat Sanayii Alt Sektörleri",
+                      "Ana sektörler (2 haneli NACE, C10–C33) düzeyinde üretim performansı · yıl ortalaması, YoY %")
         else:
-            source("Kaynak: TÜİK — Sanayi Üretim Endeksi, sınıf düzeyi · endeksten hesaplanan yıllık değişim")
+            sec_title("Alt Sektör Kırılımları",
+                      "Sınıf (4 haneli NACE) düzeyinde üretim performansı · yıl ortalaması, YoY %")
+        if f2:
+            secs   = sorted(f2.keys())
+            ann_by = {s: annual_avg(f2[s]) for s in secs}
+            yrs    = sorted({y for a in ann_by.values() for y in a})[-5:]
+            latest = yrs[-1]
 
-        with st.expander("📋 Detay tablosu — tüm yıllar"):
-            rows = []
-            for s in order[::-1]:
-                r = {"Kod": s, "Alt Sektör": nace_name(s)}
-                for yr in yrs:
-                    v = ann_by[s].get(yr)
-                    r[str(yr)] = f"{v:+.1f}%" if v is not None else "—"
-                rows.append(r)
-            st.dataframe(pd.DataFrame(rows).set_index("Kod"), use_container_width=True)
-    else:
-        st.info("Bu sektör için sınıf düzeyi kırılım verisi bulunamadı.")
+            # Son yıla göre sırala (büyükten küçüğe)
+            order  = sorted(secs, key=lambda s: ann_by[s].get(latest) if ann_by[s].get(latest) is not None else -999,
+                            reverse=False)  # yatay bar: en büyük üstte olsun diye ascending
 
-# ── TAB 3: DIŞ TİCARET ───────────────────────────────────────────────────────────
-with tabs[3]:
+            c1, c2 = st.columns([5, 4], gap="large")
+
+            with c1:
+                chart_head(f"{latest} Performansı", "Son yıl ortalaması · sıralı")
+                vals_l  = [ann_by[s].get(latest, 0) or 0 for s in order]
+                bar_col = [POS if v >= 0 else NEG for v in vals_l]
+                fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    y=[wrap_name(s, 30) for s in order],
+                    x=vals_l, orientation="h",
+                    marker_color=bar_col, marker_line_width=0,
+                    marker=dict(cornerradius=4),
+                    text=[f"{v:+.1f}%" for v in vals_l],
+                    textposition="outside", cliponaxis=False,
+                    textfont=dict(size=11, family="Inter"),
+                    hovertext=[f"{s} · {nace_name(s)}" for s in order],
+                    hovertemplate="%{hovertext}<br><b>%{x:+.1f}%</b><extra></extra>",
+                    width=0.6,
+                ))
+                h2 = max(300, 66 * len(order))
+                fig.update_layout(**LAYOUT, height=h2, showlegend=False, hovermode="closest",
+                                  margin=dict(l=8, r=54, t=8, b=36), bargap=0.32)
+                fig.update_xaxes(ticksuffix="%", zeroline=True, zerolinecolor="#CBD5E1")
+                fig.update_yaxes(showgrid=False, tickfont=dict(size=10.5, color=INK_SOFT))
+                fig.add_vline(x=0, line_width=1, line_color="#CBD5E1")
+                st.plotly_chart(fig, use_container_width=True, config=NOBAR)
+
+            with c2:
+                chart_head("Yıllara Göre Isı Haritası", "Kırmızı: daralma · Mavi: büyüme")
+                z, txt = [], []
+                for s in order:
+                    row  = [ann_by[s].get(y) for y in yrs]
+                    z.append(row)
+                    txt.append([f"{v:+.1f}" if v is not None else "" for v in row])
+                zmax = max((abs(v) for r in z for v in r if v is not None), default=1)
+                fig_h = go.Figure(go.Heatmap(
+                    z=z, x=yrs, y=[wrap_name(s, 30) for s in order],
+                    text=txt, texttemplate="%{text}",
+                    textfont=dict(size=10.5, family="Inter"),
+                    colorscale=[[0, "#DC2626"], [0.42, "#FEE2E2"], [0.5, "#FFFFFF"],
+                                [0.58, "#DBEAFE"], [1, BRAND]],
+                    zmid=0, zmin=-zmax, zmax=zmax,
+                    xgap=4, ygap=4, showscale=False,
+                    hovertemplate="%{y}<br>%{x}: <b>%{z:+.1f}%</b><extra></extra>",
+                ))
+                fig_h.update_layout(**LAYOUT, height=h2, hovermode="closest",
+                                    margin=dict(l=8, r=8, t=8, b=36))
+                fig_h.update_xaxes(side="bottom", showline=False, ticks="")
+                fig_h.update_yaxes(showticklabels=False, showgrid=False)
+                st.plotly_chart(fig_h, use_container_width=True, config=NOBAR)
+
+            if nace == TOTAL_MANUFACTURING:
+                source("Kaynak: TÜİK — Sanayi Üretim Endeksi, Ana Endeksler (2 haneli NACE, C10–C33)")
+            else:
+                source("Kaynak: TÜİK — Sanayi Üretim Endeksi, sınıf düzeyi · endeksten hesaplanan yıllık değişim")
+
+            with st.expander("📋 Detay tablosu — tüm yıllar"):
+                rows = []
+                for s in order[::-1]:
+                    r = {"Kod": s, "Alt Sektör": nace_name(s)}
+                    for yr in yrs:
+                        v = ann_by[s].get(yr)
+                        r[str(yr)] = f"{v:+.1f}%" if v is not None else "—"
+                    rows.append(r)
+                st.dataframe(pd.DataFrame(rows).set_index("Kod"), use_container_width=True)
+        else:
+            st.info("Bu sektör için sınıf düzeyi kırılım verisi bulunamadı.")
+
+
+
+# ── TAB 2: DIŞ TİCARET ───────────────────────────────────────────────────────────
+with tabs[2]:
     sec_title("Dış Ticaret",
               f"Miktar endeksi, önceki yıla göre değişim (%) · SITC bölüm {SITC_MAP.get(nace, 'T')}")
     if f3:
@@ -1499,8 +1501,8 @@ with tabs[3]:
     else:
         st.info("Bu sektör için dış ticaret verisi bulunamadı.")
 
-# ── TAB 4: KAPASİTE ──────────────────────────────────────────────────────────────
-with tabs[4]:
+# ── TAB 3: KAPASİTE ──────────────────────────────────────────────────────────────
+with tabs[3]:
     sec_title("Kapasite Kullanım Oranı", "TCMB imalat sanayi KKO · sektör vs. imalat geneli (%)")
     if f4:
         all_v = [v for s in f4.values()
@@ -1534,7 +1536,7 @@ with tabs[4]:
         st.info("KKO verisi bulunamadı.")
 
 # ── TAB 5: ENFLASYON / ÜFE ───────────────────────────────────────────────────────
-with tabs[5]:
+with tabs[4]:
     sec_title("Üretici Fiyat Endeksi (ÜFE)", "Yıllık değişim (%) · sektör maliyet baskısı")
     if f5:
         def ufe_label(lbl):
@@ -1568,8 +1570,8 @@ with tabs[5]:
     else:
         st.info("ÜFE verisi bulunamadı.")
 
-# ── TAB 6: CİRO ──────────────────────────────────────────────────────────────────
-with tabs[6]:
+# ── TAB 5: CİRO ──────────────────────────────────────────────────────────────────
+with tabs[5]:
     sec_title("Ciro Endeksi", "Önceki yıla göre değişim (%) · nominal, mevsim etkisinden arındırılmış")
     if f6:
         c1, c2 = st.columns([3, 2], gap="large")
@@ -1622,8 +1624,8 @@ with tabs[6]:
     else:
         st.info("Ciro verisi için 'python cache_all.py' çalıştırın.")
 
-# ── TAB 7: İSTİHDAM ──────────────────────────────────────────────────────────────
-with tabs[7]:
+# ── TAB 6: İSTİHDAM ──────────────────────────────────────────────────────────────
+with tabs[6]:
     sec_title("Ücretli Çalışan Sayısı", "İstihdam, önceki yıla göre değişim (%)")
     if f7:
         fig = go.Figure()
@@ -1665,8 +1667,8 @@ with tabs[7]:
     else:
         st.info("İstihdam verisi için 'python cache_all.py' çalıştırın.")
 
-# ── TAB 8: İSO 500 ───────────────────────────────────────────────────────────────
-with tabs[8]:
+# ── TAB 7: İSO 500 ───────────────────────────────────────────────────────────────
+with tabs[7]:
     if f8:
         # ── Yıl seçimi ──
         _years = f8.get("available_years") or [f8["yil"]]
@@ -1819,7 +1821,7 @@ with tabs[8]:
         st.info("Bu sektörde İSO 500 / İkinci 500 listesine giren kuruluş bulunmuyor "
                 "veya İSO kaynak dosyaları okunamadı.")
 
-# ── TAB 9: HABER & RİSK ──────────────────────────────────────────────────────────
+# ── TAB 8: HABER & RİSK ──────────────────────────────────────────────────────────
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_news(nace_code, query_override="", time_range=""):
     from news_analysis import fetch_sector_news
@@ -1829,7 +1831,7 @@ def get_news(nace_code, query_override="", time_range=""):
     except Exception:
         return []
 
-with tabs[9]:
+with tabs[8]:
     from news_analysis import TIME_RANGES
     th1, th2 = st.columns([3, 1])
     with th1:
@@ -1901,7 +1903,7 @@ with tabs[9]:
                         f'formatında risk-fırsat maddelerine dönüştürmek için butona basın.</div>',
                         unsafe_allow_html=True)
 
-# ── TAB 10: ANALİST GÖRÜNÜMÜ ─────────────────────────────────────────────────────
+# ── TAB 9: ANALİST GÖRÜNÜMÜ ─────────────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def cross_sector_panel(cache_key):
     """24 sektörün son değerlerini türev metriklerle birlikte döner (percentil için)."""
@@ -1941,7 +1943,7 @@ def _pct_rank(values, target):
     below = sum(1 for v in vals if v < target)
     return round(below / (len(vals) - 1) * 100)
 
-with tabs[10]:
+with tabs[9]:
     sec_title("Analist Görünümü",
               "Reel büyüme, verimlilik, momentum ve karşılaştırmalı konumlanma · türev göstergeler")
 
@@ -1984,41 +1986,39 @@ with tabs[10]:
             st.info("Reel ciro için ciro ve ÜFE verisi gerekli.")
 
     with a2:
-        chart_head("Momentum Panosu", "Son 3 ay − önceki 3 ay ivme (puan)")
-        mom_items = [
-            ("Üretim",     momentum(_prod_ser)),
-            ("Reel Ciro",  momentum(_reel_ciro)),
-            ("İhracat",    momentum(_ih_ser)),
-            ("İstihdam",   momentum(_emp_ser)),
-            ("Verimlilik", momentum(_verim)),
+        chart_head("Oynaklık / Risk Profili", "Son 24 ayın standart sapması (düşük = istikrarlı)")
+        vol_items = [
+            ("Üretim",   vol_std(_prod_ser)),
+            ("Ciro",     vol_std(_ciro_ser)),
+            ("İhracat",  vol_std(_ih_ser)),
+            ("İstihdam", vol_std(_emp_ser)),
+            ("ÜFE",      vol_std(_ufe_ser)),
         ]
-        mom_items = [(n, round(v, 1)) for n, v in mom_items if v is not None]
-        if mom_items:
-            names = [n for n, _ in mom_items][::-1]
-            mvals = [v for _, v in mom_items][::-1]
+        vol_items = [(n, round(v, 1)) for n, v in vol_items if v is not None]
+        if vol_items:
+            names = [n for n, _ in vol_items][::-1]
+            vvals = [v for _, v in vol_items][::-1]
             fig = go.Figure(go.Bar(
-                y=names, x=mvals, orientation="h",
-                marker_color=[POS if v >= 0 else NEG for v in mvals],
-                marker_line_width=0, marker=dict(cornerradius=3),
-                text=[f"{v:+.1f}" for v in mvals], textposition="outside",
+                y=names, x=vvals, orientation="h",
+                marker_color=AMBER, marker_line_width=0, marker=dict(cornerradius=3),
+                text=[f"{v:.1f}" for v in vvals], textposition="outside",
                 cliponaxis=False, textfont=dict(size=11, family="Inter"),
-                hovertemplate="%{y}: <b>%{x:+.1f} puan</b><extra></extra>", width=0.6))
-            _mx = max(abs(v) for v in mvals) * 1.5 or 1
+                hovertemplate="%{y}: <b>σ = %{x:.1f}</b><extra></extra>", width=0.58))
             fig.update_layout(**LAYOUT, height=360, showlegend=False, hovermode="closest",
-                              margin=dict(l=8, r=40, t=8, b=30))
-            fig.update_xaxes(range=[-_mx, _mx], zeroline=True, zerolinecolor="#CBD5E1",
-                             showticklabels=False, showline=False)
+                              margin=dict(l=8, r=36, t=8, b=30))
+            fig.update_xaxes(showticklabels=False, showline=False,
+                             range=[0, max(vvals) * 1.35 or 1])
             fig.update_yaxes(showgrid=False, tickfont=dict(size=11, color=INK_SOFT))
             st.plotly_chart(fig, use_container_width=True, config=NOBAR)
-            st.markdown('<div class="src">Yeşil: ivmelenme (hızlanan büyüme) · '
-                        'Kırmızı: yavaşlama</div>', unsafe_allow_html=True)
+            st.markdown('<div class="src">Yüksek σ = öngörülemez talep/fiyat · '
+                        'planlama ve nakit akışı riski</div>', unsafe_allow_html=True)
         else:
-            st.info("Momentum için yeterli veri yok.")
+            st.info("Oynaklık için yeterli veri yok.")
 
     st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
 
     # ── Verimlilik + Oynaklık ──
-    b1, b2 = st.columns([3, 2], gap="large")
+    b1 = st.container()
     with b1:
         chart_head("İşgücü Verimliliği", "Üretim ve istihdam YoY · makas = verimlilik (yaklaşık)")
         if _prod_ser and _emp_ser and _verim:
@@ -2050,35 +2050,7 @@ with tabs[10]:
         else:
             st.info("Verimlilik için üretim ve istihdam verisi gerekli.")
 
-    with b2:
-        chart_head("Oynaklık / Risk Profili", "Son 24 ayın standart sapması (düşük = istikrarlı)")
-        vol_items = [
-            ("Üretim",   vol_std(_prod_ser)),
-            ("Ciro",     vol_std(_ciro_ser)),
-            ("İhracat",  vol_std(_ih_ser)),
-            ("İstihdam", vol_std(_emp_ser)),
-            ("ÜFE",      vol_std(_ufe_ser)),
-        ]
-        vol_items = [(n, round(v, 1)) for n, v in vol_items if v is not None]
-        if vol_items:
-            names = [n for n, _ in vol_items][::-1]
-            vvals = [v for _, v in vol_items][::-1]
-            fig = go.Figure(go.Bar(
-                y=names, x=vvals, orientation="h",
-                marker_color=AMBER, marker_line_width=0, marker=dict(cornerradius=3),
-                text=[f"{v:.1f}" for v in vvals], textposition="outside",
-                cliponaxis=False, textfont=dict(size=11, family="Inter"),
-                hovertemplate="%{y}: <b>σ = %{x:.1f}</b><extra></extra>", width=0.58))
-            fig.update_layout(**LAYOUT, height=340, showlegend=False, hovermode="closest",
-                              margin=dict(l=8, r=36, t=8, b=30))
-            fig.update_xaxes(showticklabels=False, showline=False,
-                             range=[0, max(vvals) * 1.35 or 1])
-            fig.update_yaxes(showgrid=False, tickfont=dict(size=11, color=INK_SOFT))
-            st.plotly_chart(fig, use_container_width=True, config=NOBAR)
-            st.markdown('<div class="src">Yüksek σ = öngörülemez talep/fiyat · '
-                        'planlama ve nakit akışı riski</div>', unsafe_allow_html=True)
-        else:
-            st.info("Oynaklık için yeterli veri yok.")
+
 
     st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
 
@@ -2291,8 +2263,8 @@ with tabs[10]:
                     'toplam imalat sanayii seçiliyken bu bölüm devre dışıdır.</div>',
                     unsafe_allow_html=True)
 
-# ── TAB 11: METODOLOJİ ──────────────────────────────────────────────────────────
-with tabs[11]:
+# ── TAB 10: METODOLOJİ ──────────────────────────────────────────────────────────
+with tabs[10]:
     sec_title("Metodoloji & Veri Kaynakları",
               "Dashboard'ta kullanılan tüm veri kaynakları, hesaplama yöntemleri ve türev göstergeler")
 
