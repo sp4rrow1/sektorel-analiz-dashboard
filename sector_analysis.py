@@ -295,31 +295,26 @@ def summarize_data(nace, fig1, fig2, fig3, fig4, fig5, fig6=None, fig7=None, f_f
             lines.append(f'  {lbl}: son={fmt_son(pts)}, trend={trend(pts)}')
 
     if f_fiyat:
-        lines.append('
-=== EK: Dis Ticaret Fiyat (Birim Deger) Makasi ===')
+        lines.append('\\n=== EK: Dis Ticaret Fiyat (Birim Deger) Makasi ===')
         for lbl, pts in last_n(f_fiyat, 12).items():
             lines.append(f'  {lbl}: son={fmt_son(pts)}, trend={trend(pts)}')
             
     if f_su:
-        lines.append('
-=== EK: Isgucu ve Saat (YoY %) ===')
+        lines.append('\\n=== EK: Isgucu ve Saat (YoY %) ===')
         for lbl, pts in last_n(f_su, 12).items():
             lines.append(f'  {lbl}: son={fmt_son(pts)}, trend={trend(pts)}')
 
     if f_ydufe:
-        lines.append('
-=== EK: YD-UFE (Ihracat Fiyatlamasi) ===')
+        lines.append('\\n=== EK: YD-UFE (Ihracat Fiyatlamasi) ===')
         for lbl, pts in last_n(f_ydufe, 12).items():
             lines.append(f'  {lbl}: son={fmt_son(pts)}')
 
     if f_tufe:
-        lines.append('
-=== EK: TUFE (Tuketici Enflasyonu) ===')
+        lines.append('\\n=== EK: TUFE (Tuketici Enflasyonu) ===')
         for lbl, pts in last_n(f_tufe, 12).items():
             lines.append(f'  {lbl}: son={fmt_son(pts)}')
 
-    return '
-'.join(lines)
+    return '\\n'.join(lines)
 
 
 
