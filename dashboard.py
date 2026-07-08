@@ -1771,159 +1771,165 @@ with tabs[6]:
 # ── TAB 7: İSO 500 ───────────────────────────────────────────────────────────────
 with tabs[7]:
     if f8:
-        # ── Yıl seçimi ──
-        _years = f8.get("available_years") or [f8["yil"]]
+        # Fragment: yıl seçimi yalnızca bu bölümü yeniden çalıştırır — tüm
+        # script'in yeniden koşup aktif sekmenin ilk sekmeye dönmesini önler.
+        @st.fragment
+        def _iso_tab():
+            # ── Yıl seçimi ──
+            _years = f8.get("available_years") or [f8["yil"]]
 
-        ty1, ty2 = st.columns([3, 1])
-        with ty2:
-            sel_year = st.selectbox("İSO yılı", _years,
-                                    format_func=lambda y: f"{y} listesi",
-                                    label_visibility="collapsed")
-        # Seçilen yıl en güncelden farklıysa o yılın kesitini yeniden hesapla
-        if sel_year != f8["yil"]:
-            try:
-                from iso_data import sector_iso as _sec_iso
-                f8v = _sec_iso(nace, year=sel_year) or f8
-            except Exception:
-                f8v = f8
-        else:
-            f8v = f8
-        f8 = f8v
-        yil8 = f8["yil"]
-        with ty1:
-            sec_title(f"İSO 500 & İkinci 500'de {sector_tr}",
-                      f"Türkiye'nin en büyük sanayi kuruluşları içindeki sektör fotoğrafı · {yil8}")
+            ty1, ty2 = st.columns([3, 1])
+            with ty2:
+                sel_year = st.selectbox("İSO yılı", _years,
+                                        format_func=lambda y: f"{y} listesi",
+                                        key=f"iso_yil_{nace}",
+                                        label_visibility="collapsed")
+            # Seçilen yıl en güncelden farklıysa o yılın kesitini yeniden hesapla
+            if sel_year != f8["yil"]:
+                try:
+                    from iso_data import sector_iso as _sec_iso
+                    f8i = _sec_iso(nace, year=sel_year) or f8
+                except Exception:
+                    f8i = f8
+            else:
+                f8i = f8
+            yil8 = f8i["yil"]
+            with ty1:
+                sec_title(f"İSO 500 & İkinci 500'de {sector_tr}",
+                          f"Türkiye'nin en büyük sanayi kuruluşları içindeki sektör fotoğrafı · {yil8}")
 
-        # ── KPI satırı ──
-        ic = st.columns(5)
-        kpi_card(ic[0], "Listedeki Firma", f"{f8['firma_sayisi']}",
-                 f"İSO 500: {f8['firma_500']} · İkinci 500: {f8['firma_2_500']}",
-                 icon="🏢")
-        kpi_card(ic[1], "Üretimden Satışlar", f"₺{f8['toplam_uretim_satis']/1e9:,.0f} mlr".replace(",", "."),
-                 f"{yil8} toplamı" + (f" · pay %{f8['pay_uretim']:.1f}"
-                                      if f8.get('pay_uretim') and nace != TOTAL_MANUFACTURING else ""),
-                 icon="💼")
-        kpi_card(ic[2], "İhracat", f"${f8['toplam_ihracat_musd']:,.0f} mn".replace(",", "."),
-                 f"{yil8} · beyan eden firmalar", icon="🌍")
-        kpi_card(ic[3], "İstihdam", f"{f8['toplam_calisan']:,.0f}".replace(",", "."),
-                 "ücretli çalışan ort.", icon="👥")
-        marj = f8.get("favok_marj_med")
-        kpi_card(ic[4], "FAVÖK Marjı (medyan)",
-                 f"%{marj:.1f}" if marj is not None else "—",
-                 "beyan eden firmalar", icon="📐",
-                 tone="pos" if (marj or 0) >= 10 else None)
+            # ── KPI satırı ──
+            ic = st.columns(5)
+            kpi_card(ic[0], "Listedeki Firma", f"{f8i['firma_sayisi']}",
+                     f"İSO 500: {f8i['firma_500']} · İkinci 500: {f8i['firma_2_500']}",
+                     icon="🏢")
+            kpi_card(ic[1], "Üretimden Satışlar", f"₺{f8i['toplam_uretim_satis']/1e9:,.0f} mlr".replace(",", "."),
+                     f"{yil8} toplamı" + (f" · pay %{f8i['pay_uretim']:.1f}"
+                                          if f8i.get('pay_uretim') and nace != TOTAL_MANUFACTURING else ""),
+                     icon="💼")
+            kpi_card(ic[2], "İhracat", f"${f8i['toplam_ihracat_musd']:,.0f} mn".replace(",", "."),
+                     f"{yil8} · beyan eden firmalar", icon="🌍")
+            kpi_card(ic[3], "İstihdam", f"{f8i['toplam_calisan']:,.0f}".replace(",", "."),
+                     "ücretli çalışan ort.", icon="👥")
+            marj = f8i.get("favok_marj_med")
+            kpi_card(ic[4], "FAVÖK Marjı (medyan)",
+                     f"%{marj:.1f}" if marj is not None else "—",
+                     "beyan eden firmalar", icon="📐",
+                     tone="pos" if (marj or 0) >= 10 else None)
 
-        st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
-        il_l, il_r = st.columns([5, 4], gap="large")
+            st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+            il_l, il_r = st.columns([5, 4], gap="large")
 
-        # ── Top 15 firma ──
-        with il_l:
-            chart_head(f"En Büyük 15 Kuruluş", f"Üretimden satışlar, milyar ₺ · {yil8}")
-            fdf = f8["firmalar"].head(15).iloc[::-1]
-            bar_c = [BRAND if l == "İSO 500" else "#93C5FD" for l in fdf["liste"]]
-            fig_i = go.Figure()
-            fig_i.add_trace(go.Bar(
-                y=[n[:36] + ("…" if len(n) > 36 else "") for n in fdf["firma"]],
-                x=fdf["uretim_satis"] / 1e9,
-                orientation="h", marker_color=bar_c, marker_line_width=0,
-                marker=dict(cornerradius=3),
-                text=[f"{v/1e9:,.1f}".replace(",", ".") for v in fdf["uretim_satis"]],
-                textposition="outside", cliponaxis=False,
-                textfont=dict(size=10, family="Inter"),
-                customdata=[[il, f"{e:,.0f}" if pd.notna(e) else "—",
-                             f"{int(c):,}".replace(",", ".") if pd.notna(c) else "—"]
-                            for il, e, c in zip(fdf["il"], fdf["ihracat_musd"], fdf["calisan"])],
-                hovertemplate="<b>%{y}</b><br>Satış: ₺%{x:.1f} mlr<br>"
-                              "İhracat: $%{customdata[1]} mn · Çalışan: %{customdata[2]}"
-                              "<br>%{customdata[0]}<extra></extra>",
-                width=0.62,
-            ))
-            fig_i.update_layout(**LAYOUT, height=max(360, 30 * len(fdf) + 60),
-                                showlegend=False, hovermode="closest",
-                                margin=dict(l=8, r=52, t=8, b=36))
-            fig_i.update_xaxes(title=None, showticklabels=False, showline=False)
-            fig_i.update_yaxes(showgrid=False, tickfont=dict(size=10, color=INK_SOFT))
-            st.plotly_chart(fig_i, use_container_width=True, config=NOBAR)
-            st.markdown(
-                f'<div class="src">Koyu mavi: İSO 500 · Açık mavi: İSO İkinci 500</div>',
-                unsafe_allow_html=True)
-
-        with il_r:
-            # ── Yıllara göre sektör (İSO 500) ──
-            y500 = [r for r in f8["yearly"] if r["liste"] == "İSO 500"]
-            if len(y500) >= 2:
-                chart_head("İSO 500'de Sektör Trendi", "Üretimden satışlar (nominal) ve firma sayısı")
-                fig_t = go.Figure()
-                fig_t.add_trace(go.Bar(
-                    x=[str(r["yil"]) for r in y500],
-                    y=[r["uretim_satis"] / 1e9 for r in y500],
-                    marker_color=[TRADE_IMP, BRAND][-len(y500):],
-                    marker_line_width=0, marker=dict(cornerradius=4),
-                    text=[f"₺{r['uretim_satis']/1e9:,.0f} mlr<br>{r['firma']} firma".replace(",", ".")
-                          for r in y500],
-                    textposition="inside",
-                    textfont=dict(size=11, color="white", family="Inter"),
-                    hovertemplate="%{x}: <b>₺%{y:.0f} mlr</b><extra></extra>",
-                    width=0.5,
-                ))
-                fig_t.update_layout(**LAYOUT, height=240, showlegend=False,
-                                    margin=dict(l=8, r=8, t=8, b=32))
-                fig_t.update_yaxes(visible=False)
-                st.plotly_chart(fig_t, use_container_width=True, config=NOBAR)
-                if f8.get("yoy") and f8["yoy"].get("uretim_satis") is not None:
-                    y = f8["yoy"]
-                    ihr_txt = (f" · İhracat %{y['ihracat']:+.1f}"
-                               if y.get("ihracat") is not None else "")
-                    st.markdown(
-                        f'<div class="src">{y["donem"]}: satışlar nominal '
-                        f'%{y["uretim_satis"]:+.1f}{ihr_txt} · '
-                        f'firma sayısı {y["firma"]:+d}</div>', unsafe_allow_html=True)
-
-            # ── İl dağılımı ──
-            if f8.get("iller"):
-                chart_head("Coğrafi Yoğunlaşma", "Firma sayısına göre ilk iller")
-                ils = f8["iller"][::-1]
-                fig_il = go.Figure()
-                fig_il.add_trace(go.Bar(
-                    y=[i["il"] for i in ils], x=[i["firma"] for i in ils],
-                    orientation="h", marker_color=TEAL, marker_line_width=0,
+            # ── Top 15 firma ──
+            with il_l:
+                chart_head(f"En Büyük 15 Kuruluş", f"Üretimden satışlar, milyar ₺ · {yil8}")
+                fdf = f8i["firmalar"].head(15).iloc[::-1]
+                bar_c = [BRAND if l == "İSO 500" else "#93C5FD" for l in fdf["liste"]]
+                fig_i = go.Figure()
+                fig_i.add_trace(go.Bar(
+                    y=[n[:36] + ("…" if len(n) > 36 else "") for n in fdf["firma"]],
+                    x=fdf["uretim_satis"] / 1e9,
+                    orientation="h", marker_color=bar_c, marker_line_width=0,
                     marker=dict(cornerradius=3),
-                    text=[f"{i['firma']}" for i in ils],
+                    text=[f"{v/1e9:,.1f}".replace(",", ".") for v in fdf["uretim_satis"]],
                     textposition="outside", cliponaxis=False,
                     textfont=dict(size=10, family="Inter"),
-                    hovertemplate="%{y}: <b>%{x} firma</b><extra></extra>",
-                    width=0.55,
+                    customdata=[[il, f"{e:,.0f}" if pd.notna(e) else "—",
+                                 f"{int(c):,}".replace(",", ".") if pd.notna(c) else "—"]
+                                for il, e, c in zip(fdf["il"], fdf["ihracat_musd"], fdf["calisan"])],
+                    hovertemplate="<b>%{y}</b><br>Satış: ₺%{x:.1f} mlr<br>"
+                                  "İhracat: $%{customdata[1]} mn · Çalışan: %{customdata[2]}"
+                                  "<br>%{customdata[0]}<extra></extra>",
+                    width=0.62,
                 ))
-                fig_il.update_layout(**LAYOUT, height=max(200, 26 * len(ils) + 50),
-                                     showlegend=False, hovermode="closest",
-                                     margin=dict(l=8, r=28, t=4, b=24))
-                fig_il.update_xaxes(showticklabels=False, showline=False)
-                fig_il.update_yaxes(showgrid=False, tickfont=dict(size=10.5, color=INK_SOFT))
-                st.plotly_chart(fig_il, use_container_width=True, config=NOBAR)
+                fig_i.update_layout(**LAYOUT, height=max(360, 30 * len(fdf) + 60),
+                                    showlegend=False, hovermode="closest",
+                                    margin=dict(l=8, r=52, t=8, b=36))
+                fig_i.update_xaxes(title=None, showticklabels=False, showline=False)
+                fig_i.update_yaxes(showgrid=False, tickfont=dict(size=10, color=INK_SOFT))
+                st.plotly_chart(fig_i, use_container_width=True, config=NOBAR)
+                st.markdown(
+                    f'<div class="src">Koyu mavi: İSO 500 · Açık mavi: İSO İkinci 500</div>',
+                    unsafe_allow_html=True)
 
-        # ── Tam firma tablosu ──
-        with st.expander(f"📋 Tüm sektör firmaları ({f8['firma_sayisi']})"):
-            tdf = f8["firmalar"].copy()
-            tdf["Satış (mlr ₺)"] = (tdf["uretim_satis"] / 1e9).round(2)
-            tdf["İhracat (mn $)"] = tdf["ihracat_musd"].round(1)
-            tdf["FAVÖK %"] = tdf["favok_marj"].round(1)
-            
-            # Safe parsing for PyArrow to avoid crashes
-            tdf["sira"] = tdf["sira"].fillna(-1).astype(int).astype(str).replace("-1", "-")
-            tdf["il"] = tdf["il"].fillna("-").astype(str)
-            
-            tdf = tdf.rename(columns={"sira": "Sıra", "liste": "Liste",
-                                      "firma": "Kuruluş", "il": "İl",
-                                      "calisan": "Çalışan"})
-            st.dataframe(
-                tdf[["Sıra", "Liste", "Kuruluş", "İl", "Satış (mlr ₺)",
-                     "İhracat (mn $)", "Çalışan", "FAVÖK %"]],
-                hide_index=True,
-                use_container_width=True, height=420)
+            with il_r:
+                # ── Yıllara göre sektör (İSO 500) ──
+                y500 = [r for r in f8i["yearly"] if r["liste"] == "İSO 500"]
+                if len(y500) >= 2:
+                    chart_head("İSO 500'de Sektör Trendi", "Üretimden satışlar (nominal) ve firma sayısı")
+                    fig_t = go.Figure()
+                    fig_t.add_trace(go.Bar(
+                        x=[str(r["yil"]) for r in y500],
+                        y=[r["uretim_satis"] / 1e9 for r in y500],
+                        marker_color=[TRADE_IMP, BRAND][-len(y500):],
+                        marker_line_width=0, marker=dict(cornerradius=4),
+                        text=[f"₺{r['uretim_satis']/1e9:,.0f} mlr<br>{r['firma']} firma".replace(",", ".")
+                              for r in y500],
+                        textposition="inside",
+                        textfont=dict(size=11, color="white", family="Inter"),
+                        hovertemplate="%{x}: <b>₺%{y:.0f} mlr</b><extra></extra>",
+                        width=0.5,
+                    ))
+                    fig_t.update_layout(**LAYOUT, height=240, showlegend=False,
+                                        margin=dict(l=8, r=8, t=8, b=32))
+                    fig_t.update_yaxes(visible=False)
+                    st.plotly_chart(fig_t, use_container_width=True, config=NOBAR)
+                    if f8i.get("yoy") and f8i["yoy"].get("uretim_satis") is not None:
+                        y = f8i["yoy"]
+                        ihr_txt = (f" · İhracat %{y['ihracat']:+.1f}"
+                                   if y.get("ihracat") is not None else "")
+                        st.markdown(
+                            f'<div class="src">{y["donem"]}: satışlar nominal '
+                            f'%{y["uretim_satis"]:+.1f}{ihr_txt} · '
+                            f'firma sayısı {y["firma"]:+d}</div>', unsafe_allow_html=True)
 
-        _nace_etiketi = "tüm imalat sanayii (C10–C33)" if nace == TOTAL_MANUFACTURING else f"NACE {nace.lstrip('C')}"
-        source(f"Kaynak: İstanbul Sanayi Odası — Türkiye'nin 500 Büyük Sanayi Kuruluşu "
-               f"ve İkinci 500 · {_nace_etiketi} eşleşmesi")
+                # ── İl dağılımı ──
+                if f8i.get("iller"):
+                    chart_head("Coğrafi Yoğunlaşma", "Firma sayısına göre ilk iller")
+                    ils = f8i["iller"][::-1]
+                    fig_il = go.Figure()
+                    fig_il.add_trace(go.Bar(
+                        y=[i["il"] for i in ils], x=[i["firma"] for i in ils],
+                        orientation="h", marker_color=TEAL, marker_line_width=0,
+                        marker=dict(cornerradius=3),
+                        text=[f"{i['firma']}" for i in ils],
+                        textposition="outside", cliponaxis=False,
+                        textfont=dict(size=10, family="Inter"),
+                        hovertemplate="%{y}: <b>%{x} firma</b><extra></extra>",
+                        width=0.55,
+                    ))
+                    fig_il.update_layout(**LAYOUT, height=max(200, 26 * len(ils) + 50),
+                                         showlegend=False, hovermode="closest",
+                                         margin=dict(l=8, r=28, t=4, b=24))
+                    fig_il.update_xaxes(showticklabels=False, showline=False)
+                    fig_il.update_yaxes(showgrid=False, tickfont=dict(size=10.5, color=INK_SOFT))
+                    st.plotly_chart(fig_il, use_container_width=True, config=NOBAR)
+
+            # ── Tam firma tablosu ──
+            with st.expander(f"📋 Tüm sektör firmaları ({f8i['firma_sayisi']})"):
+                tdf = f8i["firmalar"].copy()
+                tdf["Satış (mlr ₺)"] = (tdf["uretim_satis"] / 1e9).round(2)
+                tdf["İhracat (mn $)"] = tdf["ihracat_musd"].round(1)
+                tdf["FAVÖK %"] = tdf["favok_marj"].round(1)
+            
+                # Safe parsing for PyArrow to avoid crashes
+                tdf["sira"] = tdf["sira"].fillna(-1).astype(int).astype(str).replace("-1", "-")
+                tdf["il"] = tdf["il"].fillna("-").astype(str)
+            
+                tdf = tdf.rename(columns={"sira": "Sıra", "liste": "Liste",
+                                          "firma": "Kuruluş", "il": "İl",
+                                          "calisan": "Çalışan"})
+                st.dataframe(
+                    tdf[["Sıra", "Liste", "Kuruluş", "İl", "Satış (mlr ₺)",
+                         "İhracat (mn $)", "Çalışan", "FAVÖK %"]],
+                    hide_index=True,
+                    use_container_width=True, height=420)
+
+            _nace_etiketi = "tüm imalat sanayii (C10–C33)" if nace == TOTAL_MANUFACTURING else f"NACE {nace.lstrip('C')}"
+            source(f"Kaynak: İstanbul Sanayi Odası — Türkiye'nin 500 Büyük Sanayi Kuruluşu "
+                   f"ve İkinci 500 · {_nace_etiketi} eşleşmesi")
+
+        _iso_tab()
     else:
         st.info("Bu sektörde İSO 500 / İkinci 500 listesine giren kuruluş bulunmuyor "
                 "veya İSO kaynak dosyaları okunamadı.")
