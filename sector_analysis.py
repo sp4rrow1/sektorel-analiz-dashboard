@@ -360,8 +360,10 @@ def _derived_metrics_text(fig1, fig5, fig6, fig7):
                      f"({'reel daralma' if reel < 0 else 'reel buyume'})")
     pp, pv = last(prod); ep, ev = last(emp)
     if pv is not None and ev is not None:
-        lines.append(f"  Isgucu verimliligi (uretim %{pv:.1f} - istihdam %{ev:.1f}): "
-                     f"%{pv - ev:+.1f} puan")
+        # (1+gY)/(1+gL)-1: kesikli zamanda dogru verimlilik buyumesi (OECD 2001)
+        verim = ((1 + pv/100.0) / (1 + ev/100.0) - 1) * 100.0
+        lines.append(f"  Isgucu verimliligi buyumesi (uretim %{pv:.1f}, istihdam %{ev:.1f}): "
+                     f"%{verim:+.1f}")
     if not lines:
         return ''
     return "\n=== TUREV ANALIST METRIKLERI ===\n" + "\n".join(lines) + "\n"

@@ -717,7 +717,8 @@ def merged_avg_series(fig_dict):
     return {p: sum(vs)/len(vs) for p, vs in merged.items()}
 
 def real_growth(nom_series, defl_series):
-    """Nominal YoY %'yi ÜFE YoY % ile deflate eder: (1+n)/(1+d)-1. Ortak dönemler."""
+    """Nominal YoY %'yi ÜFE YoY % ile deflate eder: (1+n)/(1+d)-1. Ortak dönemler.
+    (Ulusal hesaplar deflasyon pratiği — Eurostat 2016, SNA 2008.)"""
     out = {}
     for p, n in nom_series.items():
         d = defl_series.get(p)
@@ -728,8 +729,13 @@ def real_growth(nom_series, defl_series):
             continue
     return out
 
+# Verimlilik = (1+g_Y)/(1+g_L)−1: kesikli zamanda doğru form (OECD 2001,
+# Measuring Productivity). Aritmetik fark (g_Y−g_L) yalnız küçük oranlarda
+# geçerli bir yaklaşımdır; Türkiye ölçeğindeki oranlarda sapma büyür.
+ratio_growth = real_growth
+
 def diff_series(a, b):
-    """İki YoY serisinin farkı (yaklaşık verimlilik / makas): a - b, ortak dönem."""
+    """İki YoY serisinin aritmetik farkı (betimleyici makas): a - b, ortak dönem."""
     return {p: a[p] - b[p] for p in a if p in b and a[p] is not None and b[p] is not None}
 
 def momentum(series, win=3):
@@ -971,35 +977,43 @@ _prod_ser  = merged_avg_series(f1)                    # üretim YoY (alt grup or
 _ciro_ser  = first_serie_sorted(f6)                   # nominal ciro YoY
 _ufe_ser   = first_serie_sorted(f5)                   # sektör ÜFE YoY
 _emp_ser   = first_serie_sorted(f7)                   # istihdam YoY
+_maas_ser  = dict(sorted((f_su.get("Brüt Maaş YoY %") or {}).items()))  # ücret-maaş YoY
 _reel_ciro = real_growth(_ciro_ser, _ufe_ser)         # reel ciro YoY
-_verim     = diff_series(_prod_ser, _emp_ser)         # verimlilik ~ üretim - istihdam
+_verim     = ratio_growth(_prod_ser, _emp_ser)        # verimlilik = (1+gY)/(1+gL)−1
+_ulc       = ratio_growth(_maas_ser, _prod_ser)       # ULC = ücret kütlesi / reel üretim
 _ih_ser    = first_series(ih_series) or {}
 _it_ser    = first_series(it_series) or {}
 _net_trade = diff_series(_ih_ser, _it_ser)            # dış ticaret makası (ihr - ith)
 
 reel_p, reel_v = last_value(_reel_ciro)   # last_value → (dönem, değer)
 _, verim_v     = last_value(_verim)
+ulc_p, ulc_v   = last_value(_ulc)
 _, net_v       = last_value(_net_trade)
 prod_mom       = momentum(_prod_ser)
 
 st.markdown("<div style='height:.7rem'></div>", unsafe_allow_html=True)
-dcols = st.columns(4)
-kpi_card(dcols[0], "Reel Ciro", fmt_val(reel_v),
-         f"ÜFE'den arındırılmış · {tr_per(reel_p)}",
-         tone=tone_of(reel_v), badge=fmt_val(reel_v) if reel_v is not None else None,
-         icon="💵", spark=spark_svg(_reel_ciro, _tone_color(tone_of(reel_v))))
-kpi_card(dcols[1], "İşgücü Verimliliği", fmt_val(verim_v),
-         "üretim − istihdam (YoY farkı)",
-         tone=tone_of(verim_v), badge=fmt_val(verim_v) if verim_v is not None else None,
-         icon="⚡", spark=spark_svg(_verim, _tone_color(tone_of(verim_v))))
-kpi_card(dcols[2], "Dış Ticaret Makası", fmt_val(net_v),
-         "ihracat − ithalat (YoY farkı)",
-         tone=tone_of(net_v), badge=fmt_val(net_v) if net_v is not None else None,
-         icon="⚖️", spark=spark_svg(_net_trade, _tone_color(tone_of(net_v))))
-kpi_card(dcols[3], "Üretim Momentumu", fmt_val(prod_mom) if prod_mom is not None else "—",
-         "son 3 ay − önceki 3 ay ivme",
-         tone=tone_of(prod_mom), badge=(fmt_val(prod_mom) if prod_mom is not None else None),
-         icon="🚀", spark=spark_svg(_prod_ser, _tone_color(tone_of(prod_mom))))
+_dkpis = [
+    ("Reel Ciro", fmt_val(reel_v), f"ÜFE'den arındırılmış · {tr_per(reel_p)}",
+     tone_of(reel_v), _reel_ciro, "💵", False),
+    ("İşgücü Verimliliği", fmt_val(verim_v),
+     "üretim/istihdam bileşik oranı (OECD 2001)",
+     tone_of(verim_v), _verim, "⚡", False),
+]
+if ulc_v is not None:  # ücret verisi önbellekte varsa gerçek ULC göster
+    _dkpis.append(("Birim İşgücü Maliyeti", fmt_val(ulc_v),
+                   f"ücret kütlesi / üretim hacmi · {tr_per(ulc_p)}",
+                   tone_of(ulc_v, invert=True), _ulc, "🧾", True))
+_dkpis += [
+    ("Dış Ticaret Makası", fmt_val(net_v), "ihracat − ithalat (YoY farkı)",
+     tone_of(net_v), _net_trade, "⚖️", False),
+    ("Üretim Momentumu", fmt_val(prod_mom) if prod_mom is not None else "—",
+     "son 3 ay − önceki 3 ay ivme", tone_of(prod_mom), _prod_ser, "🚀", False),
+]
+dcols = st.columns(len(_dkpis))
+for _dc, (_lbl, _val, _sub, _tn, _spk, _ic, _) in zip(dcols, _dkpis):
+    kpi_card(_dc, _lbl, _val, _sub, tone=_tn,
+             badge=_val if _val != "—" else None, icon=_ic,
+             spark=spark_svg(_spk, _tone_color(_tn)))
 
 st.markdown("<div style='height:1.4rem'></div>", unsafe_allow_html=True)
 
@@ -2040,7 +2054,7 @@ def cross_sector_panel(cache_key):
             ihd  = {p: v for lbl, s in g3.items()
                     if "hracat" in lbl and "thalat" not in lbl for p, v in s.items()}
             reel = real_growth(ciro, ufe)
-            verim = diff_series(prod, emp)
+            verim = ratio_growth(prod, emp)
             kko_s = {kk: vv for kk, vv in g4.items() if "anayii" not in kk}
             rows[k] = {
                 "uretim":    last_value(prod)[1],
@@ -2137,7 +2151,8 @@ with tabs[9]:
     # ── Verimlilik + Oynaklık ──
     b1 = st.container()
     with b1:
-        chart_head("İşgücü Verimliliği", "Üretim ve istihdam YoY · makas = verimlilik (yaklaşık)")
+        chart_head("İşgücü Verimliliği",
+                   "Üretim ve istihdam YoY · çubuklar = verimlilik büyümesi (1+gY)/(1+gL)−1")
         if _prod_ser and _emp_ser and _verim:
             # Üç seriyi ortak döneme hizala → unified hover düzgün çalışsın
             _common = sorted(set(_prod_ser) & set(_emp_ser))[-ay_sayisi:]
@@ -2152,17 +2167,19 @@ with tabs[9]:
                 line=dict(color=TEAL, width=2, shape="spline", smoothing=.8),
                 hovertemplate="<b>%{y:+.1f}%</b><extra>İstihdam</extra>"))
             _yv = [round(_verim.get(p, 0), 1) for p in _common]
-            fig.add_trace(go.Bar(x=_cx, y=_yv, name="Verimlilik (makas)",
+            fig.add_trace(go.Bar(x=_cx, y=_yv, name="Verimlilik",
                 marker_color=["rgba(5,150,105,.35)" if v >= 0 else "rgba(220,38,38,.35)" for v in _yv],
                 marker_line_width=0,
-                hovertemplate="<b>%{y:+.1f} puan</b><extra>Verimlilik</extra>"))
+                hovertemplate="<b>%{y:+.1f}%</b><extra>Verimlilik</extra>"))
             fig.update_layout(**LAYOUT, height=340)
             fig.update_xaxes(dtick=6)
             fig.update_yaxes(ticksuffix="%")
             fig.add_hline(y=0, line_width=1, line_color="#CBD5E1")
             st.plotly_chart(fig, use_container_width=True, config=NOBAR)
-            st.markdown('<div class="src">Üretim istihdamdan hızlı artıyorsa verimlilik '
-                        'yükselir (pozitif makas). Kaynak: TÜİK üretim + ücretli çalışan endeksleri</div>',
+            st.markdown('<div class="src">Verimlilik büyümesi = (1+g<sub>üretim</sub>)/(1+g<sub>istihdam</sub>)−1 '
+                        '(OECD 2001, Measuring Productivity). Çıktı hacim endeksi, işgücü girdisi '
+                        'ücretli çalışan endeksiyle temsil edilir; çalışılan saat farkları yansımaz. '
+                        'Kaynak: TÜİK üretim + ücretli çalışan endeksleri</div>',
                         unsafe_allow_html=True)
         else:
             st.info("Verimlilik için üretim ve istihdam verisi gerekli.")
@@ -2585,9 +2602,10 @@ with tabs[10]:
                 figp.update_yaxes(range=[0, 105], ticksuffix="%")
                 st.plotly_chart(figp, use_container_width=True, config=NOBAR)
                 _hhi_txt = f"{hhi9:,.0f}".replace(",", ".")
-                st.markdown(f'<div class="src">HHI {_hhi_txt} (ürün sepeti, firma değil) — '
-                            f'{hhi_lbl} yoğunlaşma. 1.000 altı çeşitlenmiş, 1.800 üzeri '
-                            f'yoğunlaşmış portföy kabul edilir.</div>',
+                st.markdown(f'<div class="src">HHI {_hhi_txt} (ürün sepeti, firma değil; '
+                            f'Herfindahl 1950, Hirschman 1964) — {hhi_lbl} yoğunlaşma. '
+                            f'Eşikler ABD DOJ &amp; FTC 2023 Birleşme Rehberi ile uyumlu: '
+                            f'1.000 altı çeşitlenmiş, 1.800 üzeri yoğunlaşmış.</div>',
                             unsafe_allow_html=True)
 
         st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
@@ -2960,67 +2978,133 @@ with tabs[11]:
 
     with met_r:
         # ── Türev Göstergeler ──
-        chart_head("Türev Göstergeler & Hesaplama Yöntemleri", "Temel verilerden türetilen analitik metrikler")
+        chart_head("Türev Göstergeler & Hesaplama Yöntemleri",
+                   "Temel verilerden türetilen analitik metrikler · literatür atıflı")
         st.markdown(f"""
         <div class="report" style="font-size:.82rem;line-height:1.7;">
         <div class="r-head">Reel Ciro Büyümesi</div>
-        <p class="r-para">Formül: <code>Reel = (1 + Nominal%) / (1 + ÜFE%) − 1</code><br>
-        Nominal ciro artışından enflasyonu (ÜFE) arındırır. Pozitifse sektör gerçek anlamda büyüyor,
-        negatifse nominal artış enflasyonun altında kalmış (reel daralma) demektir.</p>
+        <p class="r-para">Formül: <code>g_reel = (1 + g_nominal) / (1 + π_ÜFE) − 1</code><br>
+        Nominal ciro artışı sektörel Yİ-ÜFE ile deflate edilir — ulusal hesaplardaki
+        hacim ölçümü pratiği (SNA 2008; Eurostat 2016). Aritmetik fark
+        (<code>nominal − enflasyon</code>) yalnız küçük oranlarda geçerli bir yaklaşımdır;
+        yüksek enflasyonda oransal form kullanılması gerekir. Pozitifse sektör
+        gerçek anlamda büyüyor, negatifse nominal artış enflasyonun altında (reel daralma).</p>
 
-        <div class="r-head">İşgücü Verimliliği (Proxy)</div>
-        <p class="r-para">Formül: <code>Verimlilik ≈ Üretim YoY% − İstihdam YoY%</code><br>
-        Üretim istihdamdan hızlı artıyorsa verimlilik yükselir (pozitif makas).
-        Negatifse istihdam üretimden hızlı artıyor → birim işgücü maliyeti baskısı.</p>
+        <div class="r-head">İşgücü Verimliliği Büyümesi</div>
+        <p class="r-para">Formül: <code>g_verim = (1 + g_üretim) / (1 + g_istihdam) − 1</code><br>
+        Emek verimliliği = çıktı hacmi / işgücü girdisi; büyüme oranı kesikli zamanda
+        oransal formla hesaplanır (OECD 2001; kuramsal temel: Solow 1957 büyüme muhasebesi).
+        Çıktı sanayi üretim (hacim) endeksi, işgücü girdisi ücretli çalışan endeksiyle
+        temsil edilir — çalışılan saat değişimleri yansımadığından kişi-başı verimlilik
+        proxy'sidir.</p>
 
-        <div class="r-head">Birim İşgücü Maliyeti (ULC Proxy)</div>
-        <p class="r-para">Formül: <code>ULC ≈ ÜFE YoY% − Verimlilik</code><br>
-        = <code>ÜFE − (Üretim − İstihdam)</code><br>
-        Maliyet artışı verimlilik artışını aşıyorsa → rekabet gücü kaybı.
-        Düşük ULC = sektör maliyet avantajı kazanıyor.</p>
+        <div class="r-head">Birim İşgücü Maliyeti (ULC) Büyümesi</div>
+        <p class="r-para">Formül: <code>g_ULC = (1 + g_ücret&nbsp;kütlesi) / (1 + g_üretim&nbsp;hacmi) − 1</code><br>
+        Nominal ULC = işgücüne yapılan toplam ödeme / reel çıktı (OECD 2007 ULC
+        göstergeleri sistemi). Burada pay TÜİK brüt ücret-maaş endeksi, payda üretim
+        hacim endeksidir. Ücret artışı verimlilik artışını aşarsa ULC yükselir →
+        maliyet kaynaklı rekabet gücü kaybı. <i>Not: önceki sürümdeki
+        <code>ÜFE − verimlilik</code> tanımı çıktı fiyatını işgücü maliyeti yerine
+        koyduğu için terk edilmiştir.</i></p>
 
         <div class="r-head">Dış Ticaret Makası</div>
-        <p class="r-para">Formül: <code>Makas = İhracat YoY% − İthalat YoY%</code><br>
-        Pozitifse ihracat ithalattan hızlı büyüyor → ticaret pozisyonu iyileşiyor.
-        Alan grafiği olarak gösterilir: yeşil bölge = sektör lehine, kırmızı = aleyhine.</p>
+        <p class="r-para">Formül: <code>Makas = İhracat miktar YoY% − İthalat miktar YoY%</code><br>
+        Betimleyici bir ivme farkıdır (büyüme muhasebesi anlamında bir oran değildir).
+        Pozitifse ihracat hacmi ithalattan hızlı büyüyor → net ticaret pozisyonu
+        iyileşme eğiliminde.</p>
 
         <div class="r-head">Üretim Momentumu</div>
         <p class="r-para">Formül: <code>Momentum = Ort(son 3 ay) − Ort(önceki 3 ay)</code><br>
-        İvme göstergesi: pozitifse büyüme hızlanıyor, negatifse yavaşlıyor.
-        Trendin yönü değil, trendin değişme hızı ölçülür.</p>
+        Konjonktür izlemede yaygın 3 ay/3 ay karşılaştırması (merkez bankası kısa
+        vadeli izleme pratiği; bkz. OECD 2008 kompozit öncü gösterge yaklaşımı).
+        Trendin yönünü değil, ivmesini ölçer.</p>
 
         <div class="r-head">Oynaklık (Volatilite)</div>
-        <p class="r-para">Formül: Son 24 ayın standart sapması (σ)<br>
+        <p class="r-para">Formül: son 24 aylık YoY serisinin örneklem standart sapması (σ, n−1 payda).<br>
         Yüksek σ = öngörülemez talep/fiyat ortamı → planlama ve nakit akışı riski.
-        Düşük σ = istikrarlı sektör → daha güvenilir projeksiyonlar.</p>
+        Ham seriler yerine YoY değişimler üzerinden hesaplandığından trend etkisi
+        büyük ölçüde arındırılmıştır.</p>
+
+        <div class="r-head">Ürün Yoğunlaşması — CR<sub>k</sub> & HHI</div>
+        <p class="r-para">Formüller: <code>CR_k = Σ ilk k ürün payı</code> ·
+        <code>HHI = Σ s_i²</code> (paylar %, ölçek 0–10.000; Herfindahl 1950,
+        Hirschman 1964). Eşikler ABD DOJ &amp; FTC 2023 Birleşme Rehberi'yle uyumlu:
+        &lt;1.000 çeşitlenmiş, 1.000–1.800 ılımlı, &gt;1.800 yoğunlaşmış. Burada birim
+        <i>ürün sepeti</i>dir (firma değil) → portföy çeşitlenmesi okuması yapılır.</p>
+
+        <div class="r-head">Birim Değer (Unit Value)</div>
+        <p class="r-para">Formül: <code>BD = satış değeri (₺) / satış miktarı (fiziksel birim)</code><br>
+        Ürünün ortalama fiyat düzeyi proxy'si (Kravis &amp; Lipsey 1971; UN IMTS 2010).
+        Ürün karması ve kalite değişimlerini fiyattan ayıramaz — yorumda bu sınırlılık
+        gözetilmelidir. Reel birim değer sektörel Yİ-ÜFE ile arındırılır.</p>
+
+        <div class="r-head">Miktar CAGR (5 yıl)</div>
+        <p class="r-para">Formül: <code>CAGR = (V_t / V_0)^(1/t) − 1</code> — geometrik ortalama büyüme.<br>
+        Satış <i>miktarı</i> üzerinden hesaplandığından fiyat/enflasyon etkisi içermez;
+        |CAGR| &gt; %80 gözlemler olası birim/kapsam kırılması nedeniyle elenir.</p>
 
         <div class="r-head">Sektör Sağlık Skoru (0–100)</div>
-        <p class="r-para">6 gösterge, sektörel bantlara göre 0–100'e ölçeklenir ve eşit ağırlıkla ortalamalanır:<br>
-        • Üretim [−15, +15] → 0–100<br>
-        • İhracat [−20, +20] → 0–100<br>
-        • Ciro [−25, +40] → 0–100<br>
-        • İstihdam [−10, +10] → 0–100<br>
-        • KKO farkı (sektör−imalat) [−10, +10] → 0–100<br>
-        • Maliyet avantajı (imalat ÜFE−sektör ÜFE) [−15, +15] → 0–100<br>
-        Kırmızı: &lt;40 · Sarı: 40–60 · Yeşil: &gt;60</p>
-
-        <div class="r-head">Erken Uyarı Trafik Işığı</div>
-        <p class="r-para">Her gösterge için otomatik eşik kontrolü:<br>
-        🔴 <b>Alarm</b>: 3+ ay üst üste negatif üretim, reel daralma &gt;5%, KKO imalat altında 8+ puan<br>
-        🟡 <b>Dikkat</b>: Son ay negatif, reel daralma &lt;5%, ÜFE baskısı imalat üzerinde<br>
-        🟢 <b>Normal</b>: Tüm eşikler sağlıklı aralıkta</p>
+        <p class="r-para">6 gösterge min–maks bantlarla 0–100'e normalize edilip eşit ağırlıkla
+        ortalamalanır — kompozit gösterge inşasında temel yöntem (OECD &amp; JRC 2008):<br>
+        • Üretim [−15, +15] · İhracat [−20, +20] · Ciro [−25, +40] · İstihdam [−10, +10]<br>
+        • KKO farkı (sektör−imalat) [−10, +10] · Maliyet avantajı (imalat ÜFE−sektör ÜFE) [−15, +15]<br>
+        Kırmızı: &lt;40 · Sarı: 40–60 · Yeşil: &gt;60. Bantlar imalat sanayii tarihsel
+        dağılımına göre uzman yargısıyla belirlenmiş sabitlerdir (duyarlılık: eşit ağırlık varsayımı).</p>
 
         <div class="r-head">Sektör Konumlanması (Yüzdelik Dilim)</div>
-        <p class="r-para">Seçili sektörün 24 imalat alt sektörü içindeki göreli konumu.
-        Her metrik için yüzdelik dilim (0–100) hesaplanır. 100 = en iyi performans.
-        Yeşil: üst üçte bir · Sarı: orta · Kırmızı: alt üçte bir.</p>
+        <p class="r-para">Seçili sektörün 24 imalat alt sektörü içindeki sıra istatistiği:
+        <code>PR = (altında kalan sektör sayısı) / (n−1) × 100</code>.
+        Dağılım varsayımı gerektirmeyen, aykırı değere dayanıklı göreli konum ölçüsü.</p>
 
         <div class="r-head">Korelasyon Matrisi</div>
-        <p class="r-para">24 sektörün son 24 aylık üretim YoY serileri arasındaki Pearson korelasyon katsayısı.
-        Yüksek korelasyon (→1): sektörler aynı yönde hareket ediyor (tedarik zinciri bağımlılığı).
-        Negatif korelasyon: çeşitlendirme potansiyeli. Hesaplama: <code>numpy.corrcoef</code></p>
+        <p class="r-para">24 sektörün son 24 aylık üretim YoY serileri arasındaki Pearson
+        korelasyonu (<code>numpy.corrcoef</code>). Yüksek r: ortak konjonktür/tedarik
+        zinciri bağı; negatif r: çeşitlendirme potansiyeli. <i>Ortak makro şoklar
+        korelasyonu yukarı yanlı ölçtürebilir; nedensellik okunamaz.</i></p>
+
+        <div class="r-head">REDK & İhracat</div>
+        <p class="r-para">TCMB reel efektif döviz kuru endeksi (Yİ-ÜFE bazlı; Saygılı,
+        Saygılı &amp; Yılmaz 2010). REDK artışı = TL reel değerlenmesi → fiyat
+        rekabetçiliği aleyhine; düşüşü ihracat hacmini destekler (klasik Marshall–Lerner
+        çerçevesi).</p>
         </div>
         """, unsafe_allow_html=True)
+
+    # ── Kaynakça ──
+    st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+    chart_head("Kaynakça", "Metodolojide atıf yapılan literatür")
+    st.markdown("""
+    <div class="report" style="font-size:.78rem;line-height:1.85;">
+    <p class="r-para">
+    Eurostat (2016). <i>Handbook on Prices and Volume Measures in National Accounts</i>.
+    Luxembourg: Publications Office of the European Union.<br>
+    Herfindahl, O. C. (1950). <i>Concentration in the U.S. Steel Industry</i>.
+    Doktora tezi, Columbia University.<br>
+    Hirschman, A. O. (1964). "The Paternity of an Index."
+    <i>American Economic Review</i>, 54(5), 761–762.<br>
+    Kravis, I. B. &amp; Lipsey, R. E. (1971). <i>Price Competitiveness in World Trade</i>.
+    New York: NBER / Columbia University Press.<br>
+    OECD (2001). <i>Measuring Productivity — OECD Manual: Measurement of Aggregate
+    and Industry-Level Productivity Growth</i>. Paris: OECD Publishing.<br>
+    OECD (2007). <i>OECD System of Unit Labour Cost and Related Indicators</i>.
+    Paris: OECD Publishing.<br>
+    OECD &amp; European Commission JRC (2008). <i>Handbook on Constructing Composite
+    Indicators: Methodology and User Guide</i>. Paris: OECD Publishing.<br>
+    Saygılı, H., Saygılı, M. &amp; Yılmaz, G. (2010). "Türkiye İçin Yeni Reel Efektif
+    Döviz Kuru Endeksleri." <i>TCMB Çalışma Tebliği</i> No. 10/12.<br>
+    Solow, R. M. (1957). "Technical Change and the Aggregate Production Function."
+    <i>Review of Economics and Statistics</i>, 39(3), 312–320.<br>
+    United Nations (2011). <i>International Merchandise Trade Statistics:
+    Concepts and Definitions 2010 (IMTS 2010)</i>. New York: UN Statistics Division.<br>
+    U.S. Department of Justice &amp; Federal Trade Commission (2023).
+    <i>Merger Guidelines</i>. Washington, DC.<br>
+    European Commission (2008). <i>NACE Rev. 2 — Statistical Classification of
+    Economic Activities in the European Community</i>. Eurostat Methodologies and
+    Working Papers.<br>
+    TÜİK (2025). <i>Sanayi Üretim Endeksi, Yurt İçi Üretici Fiyat Endeksi ve Sanayi
+    Ürün İstatistikleri Metaverileri</i>. Ankara: Türkiye İstatistik Kurumu.
+    </p></div>
+    """, unsafe_allow_html=True)
 
     # ── NACE-SITC Eşleme Tablosu ──
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
