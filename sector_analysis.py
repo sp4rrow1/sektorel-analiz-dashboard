@@ -368,7 +368,8 @@ def _derived_metrics_text(fig1, fig5, fig6, fig7):
 
 
 def generate_analysis(nace, fig1, fig2, fig3, fig4, fig5, iso_agg=None,
-                      fig6=None, fig7=None, kisa=False):
+                      fig6=None, fig7=None, kisa=False,
+                      f_fiyat=None, f_su=None, f_ydufe=None, f_tufe=None):
     """
     LLM'e yapılandırılmış sorgu gönderir.
     Dönen metin [TAG] bölümlerine ayrılmış olacak:
