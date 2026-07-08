@@ -2335,41 +2335,139 @@ with tabs[9]:
 # ── TAB 10: ÜRÜN DETAYI (PRODTR) ─────────────────────────────────────────────────
 with tabs[10]:
     if f9:
-        yil9 = f9["yil"]
+        from prodtr_data import (gtip_for_product, product_detail,
+                                  prodtr_for_gtip, search_products)
+        yil9   = f9["yil"]
+        trend9 = f9.get("satis_trend", {})
+        toplam_son = trend9.get(yil9, 0.0)
+
+        # ── Türev yardımcılar: deflatör (YİÜFE), reel seri, YoY, fiziksel CAGR ──
+        def _trnum(v, nd=1):
+            return f"{v:,.{nd}f}".replace(",", "§").replace(".", ",").replace("§", ".")
+
+        def _para(v):
+            if v is None: return "—"
+            a = abs(v)
+            if a >= 1e9: return f"₺{_trnum(v/1e9, 1)} mlr"
+            if a >= 1e6: return f"₺{_trnum(v/1e6, 1)} mn"
+            if a >= 1e3: return f"₺{_trnum(v/1e3, 1)} bin"
+            return f"₺{_trnum(v, 2)}"
+
+        def _birim_kisa(b):
+            m = re.search(r"\(([^)]+)\)", b or "")
+            return m.group(1) if m else (b or "birim")
+
+        def _yiufe_yillik(code):
+            """Sektörün yurt içi ÜFE endeksi (2003=100) → yıllık ortalama seviye."""
+            for s_ in cache.get("ufe", []):
+                k_ = s_.get("key", {})
+                if (k_.get("INDICATOR") == "F_YIUFE" and k_.get("DEGISIM") == "1"
+                        and k_.get("URUN_UFE_NACE_CPA") == code):
+                    by = {}
+                    for p_, v_ in s_.get("data", {}).items():
+                        if v_ is not None:
+                            by.setdefault(int(p_[:4]), []).append(v_)
+                    return {y: sum(vs)/len(vs) for y, vs in sorted(by.items())}
+            return {}
+
+        defl9 = _yiufe_yillik(nace) or _yiufe_yillik("C")
+
+        def _reel9(nom, base=None):
+            """Nominal yıllık seriyi baz yıl fiyatlarına çevirir (sektörel YİÜFE)."""
+            ok = [y for y in (nom or {}) if y in defl9 and defl9[y]]
+            if not ok: return {}
+            b = base if (base in defl9 and defl9.get(base)) else max(ok)
+            return {y: nom[y] * defl9[b] / defl9[y] for y in sorted(ok)}
+
+        def _yoy9(series, y):
+            v1, v0 = (series or {}).get(y), (series or {}).get(y - 1)
+            if v1 is None or not v0: return None
+            return (v1 / v0 - 1) * 100
+
+        def _reel_yoy9(series, y):
+            n = _yoy9(series, y)
+            if n is None or not defl9.get(y) or not defl9.get(y - 1): return None
+            pi = (defl9[y] / defl9[y - 1] - 1) * 100
+            return ((1 + n/100) / (1 + pi/100) - 1) * 100
+
+        def _cagr9(series, span=5):
+            """Seride ~span yıllık bileşik büyüme (%). Son yıl güncel olmalı."""
+            ys = sorted(y for y, v in (series or {}).items() if v)
+            if not ys: return None
+            y1 = ys[-1]
+            if y1 < yil9 - 1: return None
+            cands = [y for y in ys if y1 - span - 1 <= y <= y1 - span + 1 and y < y1]
+            if not cands: return None
+            y0 = min(cands, key=lambda y: abs(y - (y1 - span)))
+            v0, v1 = series[y0], series[y1]
+            if v0 <= 0 or v1 <= 0: return None
+            return ((v1 / v0) ** (1 / (y1 - y0)) - 1) * 100
+
+        def _lbl9(r, n=34):
+            p_ = r["kod"].split(".")
+            kisa = f"{p_[0]}.{p_[1]}" if len(p_) > 1 else p_[0]
+            return f"{kisa} · {r['tanim'][:n]}" + ("…" if len(r["tanim"]) > n else "")
+
+        # Son yılda veri beyan eden ürünler (pay/yoğunlaşma bu küme üstünden)
+        son_rows9 = sorted((r for r in f9["all_rows"]
+                            if r["seri_satis"].get(yil9) is not None),
+                           key=lambda r: r["seri_satis"][yil9], reverse=True)
+        paylar9 = ([r["seri_satis"][yil9] / toplam_son * 100 for r in son_rows9]
+                   if toplam_son else [])
+        cr5_9  = sum(paylar9[:5])
+        hhi9   = sum(p*p for p in paylar9)
+        hhi_lbl = ("düşük" if hhi9 < 1000 else "ılımlı" if hhi9 < 1800 else "yüksek")
+
         sec_title(f"Ürün Detayı — {sector_tr}",
                   f"TÜİK Sanayi Ürün İstatistikleri (PRODTR) · fiziksel ürün bazında üretim ve satış · {yil9}")
 
+        _yn9 = _yoy9(trend9, yil9)          # nominal büyüme
+        _yr9 = _reel_yoy9(trend9, yil9)     # YİÜFE ile arındırılmış büyüme
+        _tone9 = (None if _yr9 is None and _yn9 is None
+                  else ("pos" if (_yr9 if _yr9 is not None else _yn9) >= 0 else "neg"))
+
         pc = st.columns(4)
         kpi_card(pc[0], "Ürün Çeşidi", f"{f9['urun_sayisi']}",
-                 f"{f9['veri_urun']} üründe veri var", icon="🧴")
-        kpi_card(pc[1], "Toplam Satış", f"₺{f9['toplam_satis']/1e9:,.0f} mlr".replace(",", "."),
-                 f"{yil9} · ürün satış değeri", icon="💰")
-        kpi_card(pc[2], "Girişim", f"{f9['toplam_girisim']:,.0f}".replace(",", "."),
-                 "ürün üreten girişim (top.)", icon="🏢")
-        _topurun = f9["top"][0]["tanim"][:22] + "…" if f9["top"] else "—"
+                 f"{len(son_rows9)} üründe {yil9} verisi · {f9['veri_urun']} üründe tarihsel seri",
+                 icon="🧴")
+        kpi_card(pc[1], "Toplam Satış", _para(toplam_son),
+                 (f"reel {_yr9:+.1f}% (YİÜFE arındırılmış)".replace(".", ",")
+                  if _yr9 is not None else f"{yil9} · ürün satış değeri"),
+                 tone=_tone9,
+                 badge=(f"{_yn9:+.1f}".replace(".", ",") + "% nominal" if _yn9 is not None else None),
+                 icon="💰")
+        kpi_card(pc[2], "Ürün Yoğunlaşması", f"%{cr5_9:,.0f}",
+                 f"CR5 · HHI {hhi9:,.0f} ({hhi_lbl}) · {yil9} ürün sepeti".replace(",", "."),
+                 icon="🎯")
+        _top1 = son_rows9[0] if son_rows9 else None
         kpi_card(pc[3], "En Büyük Ürün",
-                 f"₺{(f9['top'][0]['satis_deger'] or 0)/1e9:,.1f} mlr".replace(",", ".") if f9["top"] else "—",
-                 _topurun, icon="🥇")
+                 _para(_top1["seri_satis"][yil9]) if _top1 else "—",
+                 (_top1["tanim"][:38] + "…" if _top1 and len(_top1["tanim"]) > 38
+                  else (_top1["tanim"] if _top1 else "—")),
+                 badge=(f"%{paylar9[0]:.1f} pay".replace(".", ",") if paylar9 else None),
+                 icon="🥇")
 
         st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
         pl, pr = st.columns([5, 4], gap="large")
 
         with pl:
             chart_head(f"En Büyük 12 Ürün", f"Satış değeri, milyar ₺ · {yil9}")
-            top = f9["top"][:12][::-1]
+            top = son_rows9[:12][::-1]
             if top:
                 fig = go.Figure(go.Bar(
-                    y=[f"{t['kod'].split('.',2)[0]}.{t['kod'].split('.')[1]} · {t['tanim'][:34]}"
-                       + ("…" if len(t['tanim']) > 34 else "") for t in top],
-                    x=[(t['satis_deger'] or 0)/1e9 for t in top],
+                    y=[_lbl9(t) for t in top],
+                    x=[t["seri_satis"][yil9]/1e9 for t in top],
                     orientation="h", marker_color=BRAND, marker_line_width=0,
                     marker=dict(cornerradius=3),
-                    text=[f"{(t['satis_deger'] or 0)/1e9:,.1f}".replace(",", ".") for t in top],
+                    text=[f"{t['seri_satis'][yil9]/1e9:,.1f}".replace(",", ".") for t in top],
                     textposition="outside", cliponaxis=False,
                     textfont=dict(size=10, family="Inter"),
-                    customdata=[[t['tanim'], t['girisim'] or "—"] for t in top],
+                    customdata=[[t["tanim"],
+                                 t["seri_girisim"].get(yil9) or "—",
+                                 f"{t['seri_satis'][yil9]/toplam_son*100:.1f}" if toplam_son else "—"]
+                                for t in top],
                     hovertemplate="<b>%{customdata[0]}</b><br>Satış: ₺%{x:.2f} mlr · "
-                                  "Girişim: %{customdata[1]}<extra></extra>",
+                                  "Pay: %%{customdata[2]} · Girişim: %{customdata[1]}<extra></extra>",
                     width=0.7,
                 ))
                 fig.update_layout(**LAYOUT, height=max(360, 30*len(top)+60),
@@ -2381,122 +2479,368 @@ with tabs[10]:
             source("Kaynak: TÜİK — Sanayi Ürün İstatistikleri Veri Tabanı (PRODTR, 2005–2025)")
 
         with pr:
-            chart_head("Sektör Satış Değeri Trendi", "Tüm ürünler toplamı · milyar ₺")
-            tr = f9.get("satis_trend", {})
-            if tr:
-                yrs = sorted(tr.keys())
-                fig2 = go.Figure(go.Scatter(
-                    x=[str(y) for y in yrs], y=[tr[y]/1e9 for y in yrs],
-                    mode="lines", line=dict(color=BRAND, width=2.6, shape="spline", smoothing=.6),
+            chart_head("Sektör Satış Değeri Trendi",
+                       f"Tüm ürünler toplamı · milyar ₺ · nominal ve reel ({yil9} fiyatlarıyla)")
+            if trend9:
+                yrs = sorted(trend9.keys())
+                fig2 = go.Figure()
+                fig2.add_trace(go.Scatter(
+                    x=[str(y) for y in yrs], y=[trend9[y]/1e9 for y in yrs],
+                    name="Nominal", mode="lines",
+                    line=dict(color=BRAND, width=2.6, shape="spline", smoothing=.6),
                     fill="tozeroy", fillcolor="rgba(37,99,235,.07)",
-                    hovertemplate="%{x}: <b>₺%{y:.0f} mlr</b><extra></extra>"))
-                fig2.update_layout(**LAYOUT, height=300, showlegend=False)
+                    hovertemplate="Nominal: <b>₺%{y:.0f} mlr</b><extra></extra>"))
+                reel_tr = _reel9(trend9, yil9)
+                if len(reel_tr) >= 2:
+                    ry = sorted(reel_tr)
+                    fig2.add_trace(go.Scatter(
+                        x=[str(y) for y in ry], y=[reel_tr[y]/1e9 for y in ry],
+                        name=f"Reel ({yil9} fiy.)", mode="lines",
+                        line=dict(color=NAVY, width=2, dash="dot"),
+                        hovertemplate="Reel: <b>₺%{y:.0f} mlr</b><extra></extra>"))
+                fig2.update_layout(**LAYOUT, height=300, showlegend=len(reel_tr) >= 2)
                 fig2.update_yaxes(ticksuffix="")
                 st.plotly_chart(fig2, use_container_width=True, config=NOBAR)
-                st.markdown('<div class="src">Gizli (c) beyan edilen ürünler toplama dahil edilmez; '
+                st.markdown('<div class="src">Reel seri sektörel yurt içi ÜFE ile arındırılmıştır '
+                            '(YİÜFE 2015+). Gizli (c) beyan edilen ürünler toplama dahil edilmez; '
                             'seriler alt sınır niteliğindedir.</div>', unsafe_allow_html=True)
 
-        from prodtr_data import (gtip_for_product, product_detail,
-                                  prodtr_for_gtip, search_products)
+        # ── Yapı & dinamikler: fiziksel momentum + Pareto yoğunlaşması ──────────
+        st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+        dl9, dr9 = st.columns([5, 4], gap="large")
+
+        with dl9:
+            chart_head("Yükselen & Gerileyen Ürünler",
+                       "Satış miktarı, ~5 yıllık bileşik büyüme (fiziksel — enflasyondan bağımsız)")
+            movers = []
+            for r in son_rows9[:80]:
+                g = _cagr9(r.get("seri_miktar"))
+                if g is None or abs(g) > 80:   # veri kırılması / birim değişimi filtresi
+                    continue
+                movers.append((r, g))
+            if len(movers) >= 4:
+                movers.sort(key=lambda t: t[1], reverse=True)
+                secilen = movers[:6] + movers[-6:] if len(movers) > 12 else movers
+                secilen = sorted(secilen, key=lambda t: t[1])
+                figm = go.Figure(go.Bar(
+                    y=[_lbl9(r, 30) for r, _ in secilen],
+                    x=[g for _, g in secilen],
+                    orientation="h",
+                    marker_color=[POS if g >= 0 else NEG for _, g in secilen],
+                    marker_line_width=0, marker=dict(cornerradius=3),
+                    text=[f"{g:+.1f}%".replace(".", ",") for _, g in secilen],
+                    textposition="outside", cliponaxis=False,
+                    textfont=dict(size=10, family="Inter"),
+                    customdata=[[r["tanim"], _birim_kisa(r["birim"])] for r, _ in secilen],
+                    hovertemplate="<b>%{customdata[0]}</b><br>Miktar CAGR: %{x:+.1f}%/yıl "
+                                  "(%{customdata[1]})<extra></extra>",
+                    width=0.68,
+                ))
+                figm.update_layout(**LAYOUT, height=max(320, 28*len(secilen)+60),
+                                   showlegend=False, hovermode="closest",
+                                   margin=dict(l=8, r=60, t=8, b=30))
+                figm.update_xaxes(ticksuffix="%", zeroline=True,
+                                  zerolinecolor="#94A3B8", zerolinewidth=1.2)
+                figm.update_yaxes(showgrid=False, tickfont=dict(size=9.5, color=INK_SOFT))
+                st.plotly_chart(figm, use_container_width=True, config=NOBAR)
+                st.markdown('<div class="src">Miktar bazlı büyüme fiyat etkisi içermez; ürün '
+                            'portföyünün gerçek kayma yönünü gösterir. |CAGR| &gt; %80 olan '
+                            'seriler (olası birim/kapsam değişimi) elenmiştir.</div>',
+                            unsafe_allow_html=True)
+            else:
+                st.caption("Momentum taraması için yeterli satış miktarı serisi yok.")
+
+        with dr9:
+            chart_head("Ürün Yoğunlaşması — Pareto",
+                       f"Kümülatif satış payı, ilk N ürün · {yil9}")
+            if paylar9:
+                cum, s_ = [], 0.0
+                for p in paylar9:
+                    s_ += p; cum.append(min(s_, 100.0))
+                figp = go.Figure(go.Scatter(
+                    x=list(range(1, len(cum)+1)), y=cum, mode="lines",
+                    line=dict(color=BRAND, width=2.4),
+                    fill="tozeroy", fillcolor="rgba(37,99,235,.06)",
+                    customdata=[r["tanim"][:60] for r in son_rows9],
+                    hovertemplate="İlk %{x} ürün: <b>%%{y:.1f}</b><br>"
+                                  "%{x}. ürün: %{customdata}<extra></extra>"))
+                for n_ in (5, 10, 20):
+                    if n_ <= len(cum):
+                        figp.add_trace(go.Scatter(
+                            x=[n_], y=[cum[n_-1]], mode="markers+text",
+                            marker=dict(color=NAVY, size=8,
+                                        line=dict(color=WHITE, width=1.5)),
+                            text=[f"CR{n_} %{cum[n_-1]:.0f}"], textposition="bottom right",
+                            textfont=dict(size=10.5, color=NAVY, family="Inter"),
+                            showlegend=False, hoverinfo="skip"))
+                figp.update_layout(**LAYOUT, height=300, showlegend=False,
+                                   hovermode="closest")
+                figp.update_xaxes(title=None)
+                figp.update_yaxes(range=[0, 105], ticksuffix="%")
+                st.plotly_chart(figp, use_container_width=True, config=NOBAR)
+                _hhi_txt = f"{hhi9:,.0f}".replace(",", ".")
+                st.markdown(f'<div class="src">HHI {_hhi_txt} (ürün sepeti, firma değil) — '
+                            f'{hhi_lbl} yoğunlaşma. 1.000 altı çeşitlenmiş, 1.800 üzeri '
+                            f'yoğunlaşmış portföy kabul edilir.</div>',
+                            unsafe_allow_html=True)
 
         st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
         sub1, sub2, sub3 = st.tabs(["📋  Ürün Tablosu", "🔬  Ürün İncelemesi",
                                     "🔄  GTİP ↔ PRODTR Dönüştürücü"])
 
-        # ── Alt 1: Aranabilir ürün tablosu ──
+        # ── Alt 1: Aranabilir ürün tablosu (pay, büyüme, birim değer analitiği) ──
         with sub1:
+            idx9 = {r["kod"]: r for r in f9["all_rows"]}
             q = st.text_input("Ürün ara", value="",
                               placeholder="🔍 Ürün adı veya PRODTR kodu (ör. halı, 13.93, dokuma)",
                               key="prod_search", label_visibility="collapsed")
-            base_rows = (search_products(q, nace=nace) if q.strip()
-                         else sorted(f9["all_rows"], key=lambda x: (x["satis_deger"] or -1), reverse=True))
+            if q.strip():
+                # search_products yalnız kod/tanım döner → tam satırı all_rows'tan al
+                base_rows = [idx9[s_["kod"]] for s_ in search_products(q, nace=nace)
+                             if s_["kod"] in idx9]
+            else:
+                base_rows = sorted(f9["all_rows"],
+                                   key=lambda r: (r["seri_satis"].get(yil9) is not None,
+                                                  r["satis_deger"] or 0),
+                                   reverse=True)
             rows = []
             for r in base_rows:
-                kod = r["kod"]
+                ss, smk = r["seri_satis"], r.get("seri_miktar") or {}
                 sv = r.get("satis_deger")
-                gt = gtip_for_product(kod)
+                pay = (ss[yil9] / toplam_son * 100
+                       if toplam_son and ss.get(yil9) is not None else None)
+                yoy = _yoy9(ss, yil9)
+                mg  = _cagr9(smk)
+                bd  = (ss[yil9] / smk[yil9]
+                       if ss.get(yil9) and smk.get(yil9) else None)
                 rows.append({
-                    "PRODTR Kodu": kod,
+                    "PRODTR": r["kod"],
                     "Ürün": r.get("tanim", ""),
-                    "Satış (mlr ₺)": round((sv or 0)/1e9, 3) if sv else None,
+                    "Satış (mlr ₺)": round(sv/1e9, 3) if sv else None,
+                    "Yıl": r.get("satis_yil"),
+                    "Pay %": round(pay, 2) if pay is not None else None,
+                    "YoY %": round(yoy, 1) if yoy is not None else None,
+                    "Miktar CAGR₅ %": round(mg, 1) if mg is not None else None,
+                    "Birim Değer ₺": round(bd, 2) if bd is not None else None,
                     "Üretim": r.get("uretim"),
-                    "Birim": r.get("birim", ""),
+                    "Birim": _birim_kisa(r.get("birim", "")),
                     "Girişim": r.get("girisim"),
-                    "GTİP sayısı": len(gt),
+                    "GTİP": len(gtip_for_product(r["kod"])),
                 })
-            st.caption(f"{len(rows)} ürün gösteriliyor" + (f" · '{q}' araması" if q.strip() else ""))
-            st.dataframe(pd.DataFrame(rows).set_index("PRODTR Kodu"),
-                         use_container_width=True, height=440)
+            st.caption(f"{len(rows)} ürün gösteriliyor"
+                       + (f" · '{q}' araması" if q.strip() else "")
+                       + f" · Pay/YoY/Birim Değer yalnız {yil9} verisi olan ürünlerde hesaplanır")
+            df9 = pd.DataFrame(rows)
+            _maxpay = max((r["Pay %"] for r in rows if r["Pay %"] is not None), default=100.0)
+            st.dataframe(
+                df9.set_index("PRODTR"), use_container_width=True, height=440,
+                column_config={
+                    "Ürün": st.column_config.TextColumn("Ürün", width="large"),
+                    "Satış (mlr ₺)": st.column_config.NumberColumn(
+                        "Satış (mlr ₺)", format="%.3f",
+                        help="Ürünün son veri yılındaki satış değeri"),
+                    "Yıl": st.column_config.NumberColumn(
+                        "Yıl", format="%d", help="Son veri yılı — eski yıllar nominal TL "
+                        "olduğundan güncel ürünlerle doğrudan kıyaslanamaz"),
+                    "Pay %": st.column_config.ProgressColumn(
+                        "Pay %", format="%.1f%%", min_value=0.0, max_value=float(_maxpay),
+                        help=f"Sektör {yil9} ürün satışları içindeki pay"),
+                    "YoY %": st.column_config.NumberColumn(
+                        "YoY %", format="%+.1f%%",
+                        help=f"{yil9-1}→{yil9} nominal satış değişimi"),
+                    "Miktar CAGR₅ %": st.column_config.NumberColumn(
+                        "Miktar CAGR₅", format="%+.1f%%",
+                        help="Satış miktarının ~5 yıllık bileşik büyümesi "
+                             "(fiziksel — enflasyondan bağımsız)"),
+                    "Birim Değer ₺": st.column_config.NumberColumn(
+                        "Birim Değer ₺", format="%.2f",
+                        help=f"{yil9} satış değeri ÷ satış miktarı (₺/birim)"),
+                })
+            st.download_button(
+                "⬇ Tabloyu CSV indir", df9.to_csv(index=False).encode("utf-8-sig"),
+                file_name=f"{nace}_urun_tablosu_{yil9}.csv", mime="text/csv",
+                key=f"dl_prod_{nace}")
 
         # ── Alt 2: Tekil ürün derin incelemesi ──
         with sub2:
             prod_opts = {f"{r['kod']} · {r['tanim'][:55]}": r['kod']
                          for r in sorted(f9["all_rows"],
-                                         key=lambda x: (x["satis_deger"] or -1), reverse=True)}
-            sel = st.selectbox("Ürün seçin", list(prod_opts.keys()), index=0,
-                               key="prod_detail_sel")
-            manual = st.text_input("… veya PRODTR kodu girin (ör. 13.93.12.00.00)",
-                                   value="", key="prod_detail_manual")
+                                         key=lambda r: (r["seri_satis"].get(yil9) or 0),
+                                         reverse=True)}
+            # key sektöre bağlı: sektör değişince seçenek listesi değişir,
+            # sabit key eski değeri taşıyıp rerun hatası üretebilir
+            sc1, sc2 = st.columns([3, 2], gap="medium")
+            sel = sc1.selectbox("Ürün seçin", list(prod_opts.keys()), index=0,
+                                key=f"prod_detail_sel_{nace}")
+            manual = sc2.text_input("… veya PRODTR kodu girin", value="",
+                                    placeholder="ör. 13.93.12.00.00",
+                                    key="prod_detail_manual")
             code = manual.strip() if manual.strip() else prod_opts.get(sel)
             det = product_detail(code) if code else None
             if not det:
                 st.warning(f"'{code}' için PRODTR kaydı bulunamadı.")
             else:
+                sdd, smm = det["satis_deger"], det["satis_miktar"]
+                udd, grr = det["uretim"], det["girisim"]
+                bk = _birim_kisa(det["birim"])
+                tum_yil = sorted(set(sdd) | set(smm) | set(udd) | set(grr))
+                aralik = f"{tum_yil[0]}–{tum_yil[-1]}" if tum_yil else "—"
+                y_son = max(sdd) if sdd else (max(udd) if udd else None)
+
+                # Birim değer serisi: satış değeri ÷ satış miktarı (₺/birim)
+                bd_seri = {y: sdd[y]/smm[y] for y in sdd
+                           if smm.get(y) and sdd[y] is not None}
+
                 st.markdown(f"""<div class="report" style="padding:1rem 1.2rem;margin-bottom:.8rem">
                     <b style="font-size:1rem">{det['tanim']}</b><br>
                     <span style="color:{MUTED};font-size:.8rem">PRODTR {det['kod']} ·
                     {det['nace']} · Ölçü birimi: {det['birim'] or '—'} ·
-                    Eşleşen GTİP: {len(det['gtip'])}</span></div>""",
+                    Veri aralığı: {aralik} · Eşleşen GTİP: {len(det['gtip'])}</span></div>""",
                     unsafe_allow_html=True)
+
+                if y_son is not None:
+                    mk = st.columns(4)
+                    _ys  = _yoy9(sdd, y_son); _yrr = _reel_yoy9(sdd, y_son)
+                    kpi_card(mk[0], f"Satış Değeri ({y_son})", _para(sdd.get(y_son)),
+                             (f"reel {_yrr:+.1f}%".replace(".", ",") + " (YİÜFE arınd.)"
+                              if _yrr is not None else "nominal satış değeri"),
+                             tone=(None if _yrr is None and _ys is None
+                                   else ("pos" if (_yrr if _yrr is not None else _ys) >= 0 else "neg")),
+                             badge=(f"{_ys:+.1f}".replace(".", ",") + "% nominal" if _ys is not None else None),
+                             icon="💰")
+                    _ym = _yoy9(smm, y_son)
+                    kpi_card(mk[1], f"Satış Miktarı ({y_son})",
+                             (f"{_trnum(smm[y_son], 0)} {bk}" if smm.get(y_son) else "—"),
+                             (f"üretim: {_trnum(udd[y_son], 0)} {bk}"
+                              if udd.get(y_son) else "üretim verisi gizli/yok"),
+                             tone=(None if _ym is None else ("pos" if _ym >= 0 else "neg")),
+                             badge=(f"{_ym:+.1f}%".replace(".", ",") if _ym is not None else None),
+                             icon="📦")
+                    _yb = _yoy9(bd_seri, y_son)
+                    kpi_card(mk[2], "Birim Değer",
+                             (f"{_para(bd_seri[y_son])}/{bk}" if bd_seri.get(y_son) else "—"),
+                             "satış değeri ÷ satış miktarı",
+                             badge=(f"{_yb:+.1f}%".replace(".", ",") if _yb is not None else None),
+                             tone=(None if _yb is None else ("pos" if _yb >= 0 else "neg")),
+                             icon="🏷️")
+                    _g1 = grr.get(y_son); _g0 = grr.get(y_son - 1)
+                    kpi_card(mk[3], f"Girişim ({y_son})",
+                             (f"{_g1:.0f}" if _g1 else "—"),
+                             "bu ürünü üreten girişim sayısı",
+                             badge=(f"{_g1-_g0:+.0f}" if _g1 and _g0 else None),
+                             tone=(None if not (_g1 and _g0)
+                                   else ("pos" if _g1 >= _g0 else "neg")),
+                             icon="🏢")
+                    st.markdown("<div style='height:.8rem'></div>", unsafe_allow_html=True)
+
                 dc1, dc2 = st.columns(2, gap="large")
                 with dc1:
-                    chart_head("Satış Değeri", "milyar ₺ · 2005–2025")
-                    sd = det["satis_deger"]
-                    if sd:
-                        ys = sorted(sd)
-                        figd = go.Figure(go.Bar(x=[str(y) for y in ys],
-                            y=[sd[y]/1e9 for y in ys], marker_color=BRAND,
+                    if sd_ys := sorted(sdd):
+                        chart_head("Satış Değeri",
+                                   f"milyar ₺ · {sd_ys[0]}–{sd_ys[-1]} · nominal + reel")
+                        figd = go.Figure()
+                        figd.add_trace(go.Bar(
+                            x=[str(y) for y in sd_ys], y=[sdd[y]/1e9 for y in sd_ys],
+                            name="Nominal", marker_color=BRAND,
                             marker_line_width=0, marker=dict(cornerradius=3),
-                            hovertemplate="%{x}: <b>₺%{y:.2f} mlr</b><extra></extra>"))
-                        figd.update_layout(**LAYOUT, height=260, showlegend=False)
+                            hovertemplate="Nominal: <b>₺%{y:.3f} mlr</b><extra></extra>"))
+                        sd_reel = _reel9(sdd, y_son)
+                        if len(sd_reel) >= 2:
+                            r_ys = sorted(sd_reel)
+                            figd.add_trace(go.Scatter(
+                                x=[str(y) for y in r_ys], y=[sd_reel[y]/1e9 for y in r_ys],
+                                name=f"Reel ({y_son} fiy.)", mode="lines",
+                                line=dict(color=NAVY, width=2, dash="dot"),
+                                hovertemplate="Reel: <b>₺%{y:.3f} mlr</b><extra></extra>"))
+                        figd.update_layout(**LAYOUT, height=270,
+                                           showlegend=len(sd_reel) >= 2)
                         st.plotly_chart(figd, use_container_width=True, config=NOBAR)
                     else:
+                        chart_head("Satış Değeri", "milyar ₺")
                         st.caption("Satış değeri verisi gizli/yok.")
                 with dc2:
-                    chart_head("Üretim Miktarı", f"{det['birim'] or 'birim'} · 2005–2025")
-                    ud = det["uretim"]
-                    if ud:
-                        ys = sorted(ud)
-                        figu = go.Figure(go.Scatter(x=[str(y) for y in ys],
-                            y=[ud[y] for y in ys], mode="lines",
-                            line=dict(color=TEAL, width=2.4, shape="spline", smoothing=.6),
-                            fill="tozeroy", fillcolor="rgba(13,148,136,.07)",
-                            hovertemplate="%{x}: <b>%{y:,.0f}</b><extra></extra>"))
-                        figu.update_layout(**LAYOUT, height=260, showlegend=False)
+                    if udd or smm:
+                        u_ys = sorted(set(udd) | set(smm))
+                        chart_head("Üretim & Satış Miktarı",
+                                   f"{bk} · {u_ys[0]}–{u_ys[-1]} · aradaki fark stok/fason göstergesi")
+                        figu = go.Figure()
+                        if udd:
+                            uy = sorted(udd)
+                            figu.add_trace(go.Scatter(
+                                x=[str(y) for y in uy], y=[udd[y] for y in uy],
+                                name="Üretim", mode="lines",
+                                line=dict(color=TEAL, width=2.4, shape="spline", smoothing=.6),
+                                fill="tozeroy", fillcolor="rgba(13,148,136,.07)",
+                                hovertemplate="Üretim: <b>%{y:,.0f}</b><extra></extra>"))
+                        if smm:
+                            my = sorted(smm)
+                            figu.add_trace(go.Scatter(
+                                x=[str(y) for y in my], y=[smm[y] for y in my],
+                                name="Satış miktarı", mode="lines",
+                                line=dict(color=SKY, width=2, dash="dash"),
+                                hovertemplate="Satış: <b>%{y:,.0f}</b><extra></extra>"))
+                        figu.update_layout(**LAYOUT, height=270,
+                                           showlegend=bool(udd and smm))
                         st.plotly_chart(figu, use_container_width=True, config=NOBAR)
                     else:
-                        st.caption("Üretim miktarı verisi gizli/yok.")
-                # Girişim + GTİP listesi
-                gd1, gd2 = st.columns([1, 2], gap="large")
-                with gd1:
-                    gr = det["girisim"]
-                    if gr:
-                        gy = sorted(gr)
-                        chart_head("Girişim Sayısı", "üretici firma · yıllara göre")
+                        chart_head("Üretim & Satış Miktarı", bk)
+                        st.caption("Miktar verisi gizli/yok.")
+
+                dc3, dc4 = st.columns(2, gap="large")
+                with dc3:
+                    if len(bd_seri) >= 2:
+                        b_ys = sorted(bd_seri)
+                        chart_head("Birim Değer",
+                                   f"₺/{bk} · {b_ys[0]}–{b_ys[-1]} · ürünün ortalama fiyat düzeyi")
+                        figb = go.Figure()
+                        figb.add_trace(go.Scatter(
+                            x=[str(y) for y in b_ys], y=[bd_seri[y] for y in b_ys],
+                            name="Nominal", mode="lines+markers",
+                            line=dict(color=AMBER, width=2.2),
+                            marker=dict(size=5),
+                            hovertemplate="Nominal: <b>₺%{y:,.2f}</b><extra></extra>"))
+                        bd_reel = _reel9(bd_seri, y_son)
+                        if len(bd_reel) >= 2:
+                            br_ys = sorted(bd_reel)
+                            figb.add_trace(go.Scatter(
+                                x=[str(y) for y in br_ys], y=[bd_reel[y] for y in br_ys],
+                                name=f"Reel ({y_son} fiy.)", mode="lines",
+                                line=dict(color=NAVY, width=2, dash="dot"),
+                                hovertemplate="Reel: <b>₺%{y:,.2f}</b><extra></extra>"))
+                        figb.update_layout(**LAYOUT, height=250,
+                                           showlegend=len(bd_reel) >= 2)
+                        st.plotly_chart(figb, use_container_width=True, config=NOBAR)
+                        st.markdown('<div class="src">Reel birim değerdeki düşüş fiyat '
+                                    'rekabetine/değer kaybına, artış premiumlaşmaya işaret '
+                                    'eder (sektörel YİÜFE ile arındırılmış).</div>',
+                                    unsafe_allow_html=True)
+                    else:
+                        chart_head("Birim Değer", f"₺/{bk}")
+                        st.caption("Birim değer için yeterli satış değeri+miktarı çifti yok.")
+                with dc4:
+                    if grr:
+                        gy = sorted(grr)
+                        chart_head("Girişim Sayısı",
+                                   f"üretici girişim · {gy[0]}–{gy[-1]} · giriş-çıkış dinamiği")
                         figg = go.Figure(go.Scatter(x=[str(y) for y in gy],
-                            y=[gr[y] for y in gy], mode="lines+markers",
+                            y=[grr[y] for y in gy], mode="lines+markers",
                             line=dict(color=NAVY, width=2),
                             hovertemplate="%{x}: <b>%{y:.0f} girişim</b><extra></extra>"))
-                        figg.update_layout(**LAYOUT, height=220, showlegend=False)
+                        figg.update_layout(**LAYOUT, height=250, showlegend=False)
                         st.plotly_chart(figg, use_container_width=True, config=NOBAR)
-                with gd2:
-                    chart_head("Eşleşen GTİP Kodları", "gümrük tarife (dış ticaret bağlantısı)")
-                    if det["gtip"]:
-                        gdf = pd.DataFrame([{"GTİP": g["kod"], "Tanım": g["tanim"]}
-                                           for g in det["gtip"]])
-                        st.dataframe(gdf.set_index("GTİP"), use_container_width=True, height=220)
                     else:
-                        st.caption("Bu ürün için GTİP eşlemesi bulunamadı.")
+                        chart_head("Girişim Sayısı", "üretici girişim")
+                        st.caption("Girişim sayısı verisi gizli/yok.")
+
+                chart_head("Eşleşen GTİP Kodları",
+                           "gümrük tarife satırları — dış ticaret istatistiklerine köprü")
+                if det["gtip"]:
+                    gdf = pd.DataFrame([{"GTİP": g["kod"], "Tanım": g["tanim"]}
+                                       for g in det["gtip"]])
+                    st.dataframe(gdf.set_index("GTİP"), use_container_width=True,
+                                 height=min(320, 42 + 35*len(gdf)))
+                else:
+                    st.caption("Bu ürün için GTİP eşlemesi bulunamadı.")
 
         # ── Alt 3: GTİP ↔ PRODTR çift yönlü dönüştürücü ──
         with sub3:

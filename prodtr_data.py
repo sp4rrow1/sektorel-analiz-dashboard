@@ -151,6 +151,7 @@ def sector_products(nace, top_n=12):
 
     desc, data = c['desc'], c['data']
     sd = data.get('satis_deger', {})
+    sm = data.get('satis_miktar', {})
     ur = data.get('uretim', {})
     gr = data.get('girisim', {})
 
@@ -164,7 +165,9 @@ def sector_products(nace, top_n=12):
     if not codes:
         return None
 
-    son_yil = max(c['years']) if c['years'] else None
+    # Sektörün kendi son veri yılı (global son yıldan eski olabilir)
+    son_yil = max((y for k in codes for y in sd.get(k, {})),
+                  default=max(c['years']) if c['years'] else None)
 
     # Ürünleri son yıl satış değerine göre sırala
     rows = []
@@ -184,28 +187,38 @@ def sector_products(nace, top_n=12):
             'uretim': uval,
             'girisim': int(gval) if gval else None,
             'seri_satis': sv,
+            'seri_miktar': sm.get(k, {}),
             'seri_uretim': uv,
+            'seri_girisim': gv,
         })
 
     with_sales = [r for r in rows if r['satis_deger'] is not None]
     with_sales.sort(key=lambda r: r['satis_deger'], reverse=True)
+
+    # Sektör toplam satış trendi (yıllara göre, tüm ürünler toplamı)
+    trend = {}
+    for k in codes:
+        for y, v in sd.get(k, {}).items():
+            trend[y] = trend.get(y, 0.0) + v
+    trend = dict(sorted(trend.items()))
+
+    # Son yıl bazlı sıralama: farklı yılların değerleri karışmasın diye
+    # top listesi ve toplamlar yalnızca son yılda veri beyan eden ürünlerden gelir.
+    son_rows = sorted((r for r in rows if r['seri_satis'].get(son_yil) is not None),
+                      key=lambda r: r['seri_satis'][son_yil], reverse=True)
 
     out = {
         'nace': nace,
         'yil': son_yil,
         'urun_sayisi': len(codes),
         'veri_urun': len(with_sales),
-        'toplam_satis': sum(r['satis_deger'] for r in with_sales) or 0.0,
-        'toplam_girisim': sum(r['girisim'] for r in rows if r['girisim']) or 0,
-        'top': with_sales[:top_n],
+        'veri_urun_son': len(son_rows),
+        'toplam_satis': trend.get(son_yil, 0.0),
+        'toplam_girisim': sum(r['seri_girisim'].get(son_yil) or 0 for r in rows),
+        'top': son_rows[:top_n] if son_rows else with_sales[:top_n],
         'all_rows': rows,
+        'satis_trend': trend,
     }
-    # Sektör toplam satış trendi (yıllara göre, tüm ürünler toplamı)
-    trend = {}
-    for k in codes:
-        for y, v in sd.get(k, {}).items():
-            trend[y] = trend.get(y, 0.0) + v
-    out['satis_trend'] = dict(sorted(trend.items()))
     return out
 
 
