@@ -295,6 +295,51 @@ def fetch_tufe():
     except:
         return []
 
+def fetch_usdtry():
+    """Aylik USD/TRY: EVDS anahtari varsa aylik ortalama, yoksa TCMB kur
+    arsivinden ayin ortasindaki ilk gecerli is gunu satis kuru (2005-01+)."""
+    print("[12] USD/TRY kuru...")
+    if EVDS_KEY:
+        try:
+            url = ("series=TP.DK.USD.S.YTL&startDate=01-01-2005&endDate=01-06-2030"
+                   "&type=json&frequency=5&aggregationTypes=avg")
+            data = fetch_evds(url)
+            parsed = {}
+            for item in data.get('items', []):
+                val = item.get('TP_DK_USD_S_YTL')
+                if not val: continue
+                try:
+                    yr, mo = item.get('Tarih', '').split('-')
+                    parsed[f"{yr}-{int(mo):02d}"] = float(val)
+                except: continue
+            if parsed:
+                print(f"      EVDS: {len(parsed)} ay")
+                return parsed
+        except Exception as e:
+            print(f"      EVDS basarisiz ({e}), TCMB arsivine dusuluyor...")
+    def _gun(y, m, d):
+        u = f"https://www.tcmb.gov.tr/kurlar/{y}{m:02d}/{d:02d}{m:02d}{y}.xml"
+        try:
+            with urllib.request.urlopen(u, timeout=12) as r:
+                xml = r.read().decode('utf-8', 'replace')
+            mt = re.search(r'CurrencyCode="USD".*?<ForexSelling>([\d.]+)</ForexSelling>',
+                           xml, re.DOTALL)
+            return float(mt.group(1)) if mt else None
+        except Exception:
+            return None
+    out, today = {}, datetime.now()
+    y, m = 2005, 1
+    while (y, m) <= (today.year, today.month):
+        for d in (15, 16, 17, 14, 18, 13, 19, 12, 20):
+            v = _gun(y, m, d)
+            if v:
+                out[f"{y}-{m:02d}"] = v
+                break
+        m += 1
+        if m > 12: y, m = y + 1, 1
+    print(f"      TCMB arsivi: {len(out)} ay")
+    return out
+
     t0 = datetime.now()
 
     cache = {}
@@ -328,6 +373,7 @@ def fetch_tufe():
     safe_run('saat_ucret', fetch_saat_ucret)
     safe_run('ydufe', fetch_ydufe)
     safe_run('tufe', fetch_tufe)
+    safe_run('usdtry', fetch_usdtry)
 
     cache['meta']        = {
         'created_at': datetime.now().isoformat(),

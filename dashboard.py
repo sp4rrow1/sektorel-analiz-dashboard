@@ -811,6 +811,18 @@ with st.sidebar:
                           help="Çizgi grafiklerde gösterilecek son ay sayısı")
     st.caption(f"Son **{ay_sayisi} ay** gösteriliyor")
 
+    # ── Para birimi (TL değer taşıyan grafikler için) ────────────────────────
+    _kur_ay = cache.get("usdtry") or {}
+    if _kur_ay:
+        st.markdown('<div class="side-label">💱 Para Birimi</div>', unsafe_allow_html=True)
+        _para_sec = st.radio("Para birimi", ["₺ TL", "$ USD"], horizontal=True,
+                             label_visibility="collapsed", key="para_birimi",
+                             help="Ürün Detayı ve İSO 500'deki TL tutarlarını yıllık "
+                                  "ortalama USD/TRY kuruyla dolara çevirir (TCMB)")
+        usd_mode = _para_sec.startswith("$")
+    else:
+        usd_mode = False
+
     # ── Haber & Risk arama override ──────────────────────────────────────────
     st.markdown('<div class="side-label">📰 Haber Sorgusu</div>', unsafe_allow_html=True)
     news_query = st.text_input("Özel arama terimi", value="",
@@ -873,6 +885,30 @@ with st.spinner("Hesaplanıyor…"):
         f9 = sector_products(nace)
     except Exception:
         f9 = None
+
+# ── Para birimi türevleri: yıllık ortalama USD/TRY + dönüşüm yardımcıları ──────
+_kur_yil = {}
+if _kur_ay:
+    _kby = {}
+    for _p, _v in _kur_ay.items():
+        _kby.setdefault(int(_p[:4]), []).append(_v)
+    _kur_yil = {y: sum(vs)/len(vs) for y, vs in sorted(_kby.items())}
+
+PARA_SIM = "$" if usd_mode else "₺"
+
+def to_cur_yillik(series_tl):
+    """{yıl: TL} serisini seçili para birimine çevirir (USD: yıllık ort. kur)."""
+    if not usd_mode:
+        return dict(series_tl or {})
+    return {y: v / _kur_yil[y] for y, v in (series_tl or {}).items()
+            if y in _kur_yil and _kur_yil[y]}
+
+def tl_to_cur(v, yil):
+    """Tek TL tutarı seçili para birimine çevirir; kur yoksa None."""
+    if v is None: return None
+    if not usd_mode: return v
+    k = _kur_yil.get(yil)
+    return v / k if k else None
 
 # ─── SIDEBAR: VERI INDIR (figler hazir olduktan sonra) ──────────────────────────
 with st.sidebar:
@@ -949,26 +985,28 @@ def tr_per(p):
 def _tone_color(t):
     return POS if t == "pos" else NEG if t == "neg" else BRAND
 
+# Badge dönem bilgisi taşır (değerin tekrarı değil); değer büyük rakamda bir kez yazılır.
 cols = st.columns(6)
-kpi_card(cols[0], "Üretim", fmt_val(prod_val), f"YoY · {tr_per(prod_per)}",
-         tone=tone_of(prod_val), badge=fmt_val(prod_val) if prod_val is not None else None,
+kpi_card(cols[0], "Üretim", fmt_val(prod_val), "YoY, takvim arındırılmış",
+         tone=tone_of(prod_val), badge=tr_per(prod_per) if prod_val is not None else None,
          icon="🏭", spark=spark_svg(first_series(f1), _tone_color(tone_of(prod_val))))
-kpi_card(cols[1], "İhracat", fmt_val(ih_val), f"Miktar · {tr_per(ih_per)}",
-         tone=tone_of(ih_val), badge=fmt_val(ih_val) if ih_val is not None else None,
+kpi_card(cols[1], "İhracat", fmt_val(ih_val), "miktar endeksi YoY",
+         tone=tone_of(ih_val), badge=tr_per(ih_per) if ih_val is not None else None,
          icon="🌍", spark=spark_svg(first_series(ih_series), _tone_color(tone_of(ih_val))))
-kpi_card(cols[2], "İthalat", fmt_val(it_val), f"Miktar · {tr_per(it_per)}",
-         tone=tone_of(it_val), badge=fmt_val(it_val) if it_val is not None else None,
+kpi_card(cols[2], "İthalat", fmt_val(it_val), "miktar endeksi YoY",
+         tone=tone_of(it_val), badge=tr_per(it_per) if it_val is not None else None,
          icon="📦", spark=spark_svg(first_series(it_series), _tone_color(tone_of(it_val))))
-kpi_card(cols[3], "Ciro", fmt_val(ciro_val), f"YoY · {tr_per(ciro_per)}",
-         tone=tone_of(ciro_val), badge=fmt_val(ciro_val) if ciro_val is not None else None,
+kpi_card(cols[3], "Ciro", fmt_val(ciro_val), "nominal YoY, arındırılmış",
+         tone=tone_of(ciro_val), badge=tr_per(ciro_per) if ciro_val is not None else None,
          icon="📈", spark=spark_svg(first_series(f6), _tone_color(tone_of(ciro_val))))
 kpi_card(cols[4], "KKO", fmt_val(kko_val, suffix="%", signed=False),
-         f"Kapasite · {tr_per(kko_per)}", tone=None, icon="⚙️",
+         "kapasite kullanım oranı", tone=None, icon="⚙️",
+         badge=tr_per(kko_per) if kko_val is not None else None,
          spark=spark_svg(first_series({k: (dict(v) if not isinstance(v, dict) else v)
                                        for k, v in kko_sec.items()}), BRAND))
-kpi_card(cols[5], "ÜFE", fmt_val(ufe_val), f"Yıllık · {tr_per(ufe_per)}",
+kpi_card(cols[5], "ÜFE", fmt_val(ufe_val), "yıllık üretici enflasyonu",
          tone="neg" if (ufe_val or 0) > 20 else "pos",
-         badge=fmt_val(ufe_val) if ufe_val is not None else None, icon="💰",
+         badge=tr_per(ufe_per) if ufe_val is not None else None, icon="💰",
          spark=spark_svg(first_series(f5), _tone_color("neg" if (ufe_val or 0) > 20 else "pos")))
 
 # ── TÜREV (ANALİST) GÖSTERGELERİ ────────────────────────────────────────────────
@@ -985,37 +1023,79 @@ _ih_ser    = first_series(ih_series) or {}
 _it_ser    = first_series(it_series) or {}
 _net_trade = diff_series(_ih_ser, _it_ser)            # dış ticaret makası (ihr - ith)
 
-reel_p, reel_v = last_value(_reel_ciro)   # last_value → (dönem, değer)
-_, verim_v     = last_value(_verim)
-ulc_p, ulc_v   = last_value(_ulc)
-_, net_v       = last_value(_net_trade)
-prod_mom       = momentum(_prod_ser)
+reel_p, reel_v   = last_value(_reel_ciro)   # last_value → (dönem, değer)
+verim_p, verim_v = last_value(_verim)
+ulc_p, ulc_v     = last_value(_ulc)
+net_p, net_v     = last_value(_net_trade)
+prod_mom         = momentum(_prod_ser)
 
 st.markdown("<div style='height:.7rem'></div>", unsafe_allow_html=True)
 _dkpis = [
-    ("Reel Ciro", fmt_val(reel_v), f"ÜFE'den arındırılmış · {tr_per(reel_p)}",
-     tone_of(reel_v), _reel_ciro, "💵", False),
+    ("Reel Ciro", fmt_val(reel_v), "ÜFE'den arındırılmış YoY",
+     tone_of(reel_v), _reel_ciro, "💵", tr_per(reel_p)),
     ("İşgücü Verimliliği", fmt_val(verim_v),
      "üretim/istihdam bileşik oranı (OECD 2001)",
-     tone_of(verim_v), _verim, "⚡", False),
+     tone_of(verim_v), _verim, "⚡", tr_per(verim_p)),
 ]
 if ulc_v is not None:  # ücret verisi önbellekte varsa gerçek ULC göster
     _dkpis.append(("Birim İşgücü Maliyeti", fmt_val(ulc_v),
-                   f"ücret kütlesi / üretim hacmi · {tr_per(ulc_p)}",
-                   tone_of(ulc_v, invert=True), _ulc, "🧾", True))
+                   "ücret kütlesi / üretim hacmi",
+                   tone_of(ulc_v, invert=True), _ulc, "🧾", tr_per(ulc_p)))
 _dkpis += [
     ("Dış Ticaret Makası", fmt_val(net_v), "ihracat − ithalat (YoY farkı)",
-     tone_of(net_v), _net_trade, "⚖️", False),
+     tone_of(net_v), _net_trade, "⚖️", tr_per(net_p)),
     ("Üretim Momentumu", fmt_val(prod_mom) if prod_mom is not None else "—",
-     "son 3 ay − önceki 3 ay ivme", tone_of(prod_mom), _prod_ser, "🚀", False),
+     "son 3 ay − önceki 3 ay ivme", tone_of(prod_mom), _prod_ser, "🚀", "3a/3a"),
 ]
 dcols = st.columns(len(_dkpis))
-for _dc, (_lbl, _val, _sub, _tn, _spk, _ic, _) in zip(dcols, _dkpis):
+for _dc, (_lbl, _val, _sub, _tn, _spk, _ic, _bdg) in zip(dcols, _dkpis):
     kpi_card(_dc, _lbl, _val, _sub, tone=_tn,
-             badge=_val if _val != "—" else None, icon=_ic,
+             badge=_bdg if _val != "—" else None, icon=_ic,
              spark=spark_svg(_spk, _tone_color(_tn)))
 
 st.markdown("<div style='height:1.4rem'></div>", unsafe_allow_html=True)
+
+# ── 24 SEKTÖR PANELİ (bileşik skor ve yüzdelik konumlanma için) ─────────────────
+@st.cache_data(show_spinner=False)
+def cross_sector_panel(cache_key):
+    """24 sektörün son değerlerini türev metriklerle birlikte döner (yüzdelik için)."""
+    rows = {}
+    for k in ALL_MANUFACTURING:
+        try:
+            g1 = build_sekil1(k, cache["alt_c"], ana_c_series=_ana_c)
+            g3 = build_sekil3(k, cache["dis_ticaret"])
+            g4 = build_sekil4(k, cache["kko"])
+            g5 = build_sekil5(k, cache["ufe"])
+            g6 = build_sekil6(k, cache["ciro"])    if "ciro"    in cache else {}
+            g7 = build_sekil7(k, cache["ucretli"]) if "ucretli" in cache else {}
+            prod = merged_avg_series(g1)
+            ciro = first_serie_sorted(g6)
+            ufe  = first_serie_sorted(g5)
+            emp  = first_serie_sorted(g7)
+            ihd  = {p: v for lbl, s in g3.items()
+                    if "hracat" in lbl and "thalat" not in lbl for p, v in s.items()}
+            reel = real_growth(ciro, ufe)
+            verim = ratio_growth(prod, emp)
+            kko_s = {kk: vv for kk, vv in g4.items() if "anayii" not in kk}
+            rows[k] = {
+                "uretim":    last_value(prod)[1],
+                "reel_ciro": last_value(reel)[1],
+                "ihracat":   last_value(ihd)[1] if ihd else None,
+                "verim":     last_value(verim)[1],
+                "istihdam":  last_value(emp)[1],
+                "ufe":       last_value(ufe)[1],
+                "kko":       last_value(first_serie_sorted(kko_s))[1] if kko_s else None,
+            }
+        except Exception:
+            continue
+    return rows
+
+def _pct_rank(values, target):
+    """target'ın values içindeki yüzdelik dilimi (0-100)."""
+    vals = [v for v in values if v is not None]
+    if target is None or len(vals) < 2: return None
+    below = sum(1 for v in vals if v < target)
+    return round(below / (len(vals) - 1) * 100)
 
 # ════════════════════════════════════════════════════════════════════════════════
 #  SEKMELER
@@ -1045,11 +1125,55 @@ def sector_league(cache_key):
         out[k] = (round(sum(merged[lp]) / len(merged[lp]), 1), lp)
     return out
 
-def _clamp_score(v, lo, hi):
-    if v is None: return None
-    return max(0.0, min(100.0, (v - lo) / (hi - lo) * 100.0))
-
 with tabs[0]:
+    # ── Makro Bağlam — Türkiye geneli (sektörü konumlandıran çerçeve) ──────────
+    _tufe_ser  = first_serie_sorted(f_tufe)
+    _tufe_p, _tufe_v = last_value(_tufe_ser)
+    ufe_imalat_series = {k: v for k, v in f5.items()
+                         if " c " in (" " + k.lower() + " ")}
+    _uimal_ser = first_serie_sorted(ufe_imalat_series)
+    _uimal_p, ufe_imalat_val = last_value(_uimal_ser)
+    _redk_ser  = dict(sorted((cache.get("redk") or {}).items()))
+    _redk_p, _redk_v = last_value(_redk_ser)
+    _kur_p = max(_kur_ay) if _kur_ay else None
+    _kur_v = _kur_ay.get(_kur_p) if _kur_p else None
+    _kur_yoy = None
+    if _kur_p and _kur_ay:
+        _oy = f"{int(_kur_p[:4])-1}{_kur_p[4:]}"
+        if _kur_ay.get(_oy):
+            _kur_yoy = (_kur_v / _kur_ay[_oy] - 1) * 100
+
+    _kur_sub = "TCMB kur arşivi, ay ortası"
+    if _kur_yoy is not None:
+        _yon = "TL değer kaybı" if _kur_yoy >= 0 else "TL değer kazancı"
+        _kur_sub = f"yıllık {_kur_yoy:+.1f}% ({_yon})".replace(".", ",")
+    # Verisi olan makro kartlar (TÜFE/REDK önbelleğe eklendiğinde kendiliğinden görünür)
+    _mk_items = []
+    if _tufe_v is not None:
+        _mk_items.append(("TÜFE", fmt_val(_tufe_v), "tüketici enflasyonu, yıllık",
+                          "neg" if _tufe_v > 20 else None, tr_per(_tufe_p), "🛒",
+                          spark_svg(_tufe_ser, AMBER)))
+    if ufe_imalat_val is not None:
+        _mk_items.append(("Yİ-ÜFE (İmalat)", fmt_val(ufe_imalat_val),
+                          "üretici enflasyonu, imalat geneli",
+                          "neg" if ufe_imalat_val > 20 else None, tr_per(_uimal_p), "🏭",
+                          spark_svg(_uimal_ser, ROSE)))
+    if _kur_v is not None:
+        _mk_items.append(("USD/TRY", f"{_kur_v:,.2f}".replace(".", ","), _kur_sub,
+                          "neg" if (_kur_yoy or 0) > 20 else None, tr_per(_kur_p), "💱",
+                          spark_svg(_kur_ay, NAVY)))
+    if _redk_v is not None:
+        _mk_items.append(("REDK", f"{_redk_v:,.1f}".replace(".", ","),
+                          "reel efektif kur · düşük = rekabetçi TL",
+                          None, tr_per(_redk_p), "⚖️", spark_svg(_redk_ser, TEAL)))
+    if _mk_items:
+        sec_title("Makro Bağlam",
+                  "Türkiye geneli fiyat ve kur ortamı · sektörel verilerin okunduğu çerçeve")
+        mc0 = st.columns(len(_mk_items))
+        for _col, (_l, _v, _s, _t, _b, _i, _sp) in zip(mc0, _mk_items):
+            kpi_card(_col, _l, _v, _s, tone=_t, badge=_b, icon=_i, spark=_sp)
+        st.markdown("<div style='height:1.1rem'></div>", unsafe_allow_html=True)
+
     ov_l, ov_r = st.columns([5, 4], gap="large")
 
     # ── Sektör Ligi ──
@@ -1088,130 +1212,125 @@ with tabs[0]:
             st.info("Lig verisi hesaplanamadı.")
 
     with ov_r:
-        # ── Sektör Sağlık Skoru ──
-        sec_title("Sektör Sağlık Skoru", "6 göstergenin bileşik puanı (0–100)")
+        # ── Sektör Bileşik Skoru (yüzdelik tabanlı) ──
+        sec_title("Sektör Bileşik Skoru",
+                  "24 imalat sektörü içindeki yüzdelik konumların eşit ağırlıklı ortalaması (0–100)")
 
         imalat_kko = {k: v for k, v in f4.items() if "anayii" in k}
         imalat_kko_val, _ = last_val({k: (dict(v) if not isinstance(v, dict) else v)
                                       for k, v in imalat_kko.items()})
-        ufe_imalat_series = {k: v for k, v in f5.items()
-                             if " c " in (" " + k.lower() + " ")}
-        ufe_imalat_val, _ = last_val(ufe_imalat_series)
         emp_val, _ = last_val(f7)
 
-        comp = {
-            "Üretim":   _clamp_score(prod_val, -15, 15),
-            "İhracat":  _clamp_score(ih_val, -20, 20),
-            "Ciro":     _clamp_score(ciro_val, -25, 40),
-            "İstihdam": _clamp_score(emp_val, -10, 10),
-            "KKO farkı": _clamp_score(
-                (kko_val - imalat_kko_val) if (kko_val is not None and imalat_kko_val is not None) else None,
-                -10, 10),
-            "Maliyet (ÜFE)": _clamp_score(
-                (ufe_imalat_val - ufe_val) if (ufe_val is not None and ufe_imalat_val is not None) else None,
-                -15, 15),
-        }
-        comp_ok = {k: v for k, v in comp.items() if v is not None}
+        panel0 = cross_sector_panel(cache_date)
+        comp_ok = {}
+        if panel0 and nace in panel0:
+            _cur0 = panel0[nace]
+            for _lbl, _key, _inv in [("Üretim", "uretim", False),
+                                     ("Reel Ciro", "reel_ciro", False),
+                                     ("İhracat", "ihracat", False),
+                                     ("Verimlilik", "verim", False),
+                                     ("İstihdam", "istihdam", False),
+                                     ("KKO", "kko", False),
+                                     ("Maliyet (ÜFE)", "ufe", True)]:
+                _allv = [panel0[k].get(_key) for k in panel0]
+                _tgt = _cur0.get(_key)
+                if _inv:  # yüksek = kötü → işaret çevir
+                    _allv = [-v if v is not None else None for v in _allv]
+                    _tgt = -_tgt if _tgt is not None else None
+                _pr = _pct_rank(_allv, _tgt)
+                if _pr is not None:
+                    comp_ok[_lbl] = _pr
         score = round(sum(comp_ok.values()) / len(comp_ok)) if comp_ok else None
 
         if score is not None:
             g_col = POS if score >= 60 else AMBER if score >= 40 else NEG
-            fig_g = go.Figure(go.Indicator(
-                mode="gauge+number",
-                value=score,
-                number=dict(font=dict(size=44, color=g_col, family="Inter"),
-                            suffix="<span style='font-size:.45em;color:#64748B'> /100</span>"),
-                gauge=dict(
-                    axis=dict(range=[0, 100], tickwidth=0,
-                              tickfont=dict(size=9, color=MUTED)),
-                    bar=dict(color=g_col, thickness=0.28),
-                    bgcolor="#F1F5F9",
-                    borderwidth=0,
-                    steps=[dict(range=[0, 40],  color="#FEE2E2"),
-                           dict(range=[40, 60], color="#FEF3C7"),
-                           dict(range=[60, 100], color="#D1FAE5")],
-                ),
-            ))
-            fig_g.update_layout(**LAYOUT, height=210,
-                                margin=dict(l=24, r=24, t=18, b=6))
-            st.plotly_chart(fig_g, use_container_width=True, config=NOBAR)
+            g_txt = ("üst dilim" if score >= 66 else
+                     "orta dilim" if score >= 33 else "alt dilim")
+            st.markdown(f"""
+            <div class="report" style="text-align:center;padding:.9rem 1rem;margin-bottom:.6rem">
+              <span style="font-size:2.6rem;font-weight:800;color:{g_col};
+                    font-variant-numeric:tabular-nums">{score}</span>
+              <span style="color:{MUTED};font-size:1rem">/100</span>
+              <div style="color:{MUTED};font-size:.75rem;margin-top:.15rem">
+                24 sektör arasında {g_txt}</div>
+            </div>""", unsafe_allow_html=True)
 
-            # Bileşen çubukları
+            # Bileşen yüzdelik çubukları
             fig_c = go.Figure()
             c_names = list(comp_ok.keys())[::-1]
             c_vals  = [comp_ok[k] for k in c_names]
             fig_c.add_trace(go.Bar(
                 y=c_names, x=c_vals, orientation="h",
-                marker_color=[POS if v >= 60 else AMBER if v >= 40 else NEG for v in c_vals],
+                marker_color=[POS if v >= 66 else AMBER if v >= 33 else NEG for v in c_vals],
                 marker_line_width=0, marker=dict(cornerradius=3),
-                text=[f"{v:.0f}" for v in c_vals],
+                text=[f"P{v:.0f}" for v in c_vals],
                 textposition="outside", cliponaxis=False,
                 textfont=dict(size=10, family="Inter"),
-                hovertemplate="%{y}: <b>%{x:.0f}/100</b><extra></extra>",
+                hovertemplate="%{y}: 24 sektör içinde <b>%{x:.0f}. yüzdelik</b><extra></extra>",
                 width=0.55,
             ))
-            fig_c.update_layout(**LAYOUT, height=200, showlegend=False,
+            fig_c.update_layout(**LAYOUT, height=250, showlegend=False,
                                 hovermode="closest",
-                                margin=dict(l=8, r=34, t=4, b=20))
-            fig_c.update_xaxes(range=[0, 112], showticklabels=False, showline=False)
+                                margin=dict(l=8, r=40, t=4, b=20))
+            fig_c.update_xaxes(range=[0, 115], showticklabels=False, showline=False)
+            fig_c.add_vline(x=50, line_width=1, line_dash="dot", line_color="#CBD5E1")
             fig_c.update_yaxes(showgrid=False, tickfont=dict(size=10.5, color=INK_SOFT))
             st.plotly_chart(fig_c, use_container_width=True, config=NOBAR)
-            source("Skor: gösterge değerleri sektörel bantlara göre 0–100'e ölçeklenip ortalanır")
+            source("Sıra-tabanlı normalizasyon (yüzdelik dilim, OECD & JRC 2008) · "
+                   "eşit ağırlık · kesik çizgi = medyan sektör · P100 = en iyi")
+        elif nace == TOTAL_MANUFACTURING:
+            st.info("Bileşik skor tekil sektörler için hesaplanır — 24 sektör "
+                    "karşılaştırmasında toplam imalat referans evrenin kendisidir.")
         else:
             st.info("Skor için yeterli veri yok.")
 
-        # ── Erken Uyarı / Trafik Işığı ──
+        # ── Erken Uyarı — sinyal yaklaşımı (KLR 1998) ──
         st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
-        chart_head("Erken Uyarı Sistemi", "Son döneme ait kırılganlık ve sinyaller")
-        
+        chart_head("Erken Uyarı Sistemi",
+                   "Sinyal yaklaşımı: son değerin kendi tarihsel dağılımındaki yüzdeliği")
+
+        def _tarihsel_pr(series, invert=False, min_n=24):
+            """Son gözlemin kendi geçmişi içindeki yüzdeliği (KLR 1998 sinyal eşiği)."""
+            pts = [v for _, v in sorted((series or {}).items()) if v is not None]
+            if len(pts) < min_n:
+                return None, None
+            cur, hist = pts[-1], pts[:-1]
+            if invert:   # yüksek değer = kötü (ör. maliyet makası)
+                pr = sum(1 for v in hist if v > cur) / len(hist) * 100
+            else:
+                pr = sum(1 for v in hist if v < cur) / len(hist) * 100
+            return cur, round(pr)
+
+        def _isik(pr):
+            return "🔴" if pr <= 10 else "🟡" if pr <= 25 else "🟢"
+
+        _kko_ser0 = dict(sorted((first_series(
+            {k: (dict(v) if not isinstance(v, dict) else v)
+             for k, v in kko_sec.items()}) or {}).items()))
+        _maliyet_makas = diff_series(_ufe_ser, _uimal_ser)  # sektör − imalat ÜFE
+
         warnings = []
-        
-        # Üretim kuralı
-        if _prod_ser:
-            last_3 = list(_prod_ser.values())[-3:]
-            if len(last_3) == 3 and all(v is not None and v < 0 for v in last_3):
-                warnings.append(("Üretim", "🔴", "3 ay üst üste daralma"))
-            elif last_3 and last_3[-1] is not None and last_3[-1] < 0:
-                warnings.append(("Üretim", "🟡", f"Son ay daralma (%{last_3[-1]:.1f})"))
+        # Üretim: yüzdelik + Bry–Boschan tarzı ardışıklık kuralı
+        _pc, _ppr = _tarihsel_pr(_prod_ser)
+        if _ppr is not None:
+            _son3 = [v for v in list(_prod_ser.values())[-3:] if v is not None]
+            if len(_son3) == 3 and all(v < 0 for v in _son3):
+                warnings.append(("Üretim", "🔴",
+                                 f"3 ay üst üste daralma (ardışıklık kuralı) · son %{_pc:.1f}"))
             else:
-                warnings.append(("Üretim", "🟢", "Büyüme eğilimi"))
-
-        # KKO kuralı
-        if kko_val is not None and imalat_kko_val is not None:
-            diff = kko_val - imalat_kko_val
-            if diff <= -5:
-                warnings.append(("Kapasite", "🔴", f"İmalatın {abs(diff):.1f} puan altı"))
-            elif diff < 0:
-                warnings.append(("Kapasite", "🟡", f"İmalatın {abs(diff):.1f} puan altı"))
-            else:
-                warnings.append(("Kapasite", "🟢", "Ortalama üzeri kullanım"))
-
-        # Reel Ciro kuralı
-        if reel_v is not None:
-            if reel_v < -5:
-                warnings.append(("Reel Ciro", "🔴", f"%{abs(reel_v):.1f} reel daralma"))
-            elif reel_v < 0:
-                warnings.append(("Reel Ciro", "🟡", f"%{abs(reel_v):.1f} reel daralma"))
-            else:
-                warnings.append(("Reel Ciro", "🟢", "Pozitif reel ciro"))
-
-        # İstihdam kuralı
-        if emp_val is not None:
-            if emp_val < -3:
-                warnings.append(("İstihdam", "🔴", f"%{abs(emp_val):.1f} daralma"))
-            elif emp_val < 0:
-                warnings.append(("İstihdam", "🟡", "Zayıf istihdam"))
-            else:
-                warnings.append(("İstihdam", "🟢", "İstihdam artışı"))
-        
-        # ÜFE kuralı
-        if ufe_val is not None and ufe_imalat_val is not None:
-            if ufe_val > ufe_imalat_val + 5:
-                warnings.append(("Maliyet", "🔴", "Çok yüksek maliyet baskısı"))
-            elif ufe_val > ufe_imalat_val:
-                warnings.append(("Maliyet", "🟡", "İmalat ortalaması üzeri"))
-            else:
-                warnings.append(("Maliyet", "🟢", "Ilımlı maliyet seyri"))
+                warnings.append(("Üretim", _isik(_ppr),
+                                 f"%{_pc:+.1f} · tarihsel P{_ppr}"))
+        for _ad, _ser, _inv in [("Reel Ciro", _reel_ciro, False),
+                                ("İhracat", _ih_ser, False),
+                                ("İstihdam", first_serie_sorted(f7), False),
+                                ("Kapasite", _kko_ser0, False),
+                                ("Maliyet", _maliyet_makas, True)]:
+            _c, _pr = _tarihsel_pr(_ser, invert=_inv)
+            if _pr is None:
+                continue
+            _fmt = (f"{_c:.1f} puan makas" if _ad == "Maliyet"
+                    else f"%{_c:.1f}" if _ad == "Kapasite" else f"%{_c:+.1f}")
+            warnings.append((_ad, _isik(_pr), f"{_fmt} · tarihsel P{_pr}"))
 
         if warnings:
             html = '<div style="display:flex; flex-direction:column; gap:0.4rem;">'
@@ -1225,6 +1344,11 @@ with tabs[0]:
 </div>'''
             html += '</div>'
             st.markdown(html, unsafe_allow_html=True)
+            st.markdown('<div class="src">🔴 tarihsel P10 altı · 🟡 P25 altı · 🟢 normal — '
+                        'gösterge kendi geçmişine göre değerlendirilir (Kaminsky, Lizondo '
+                        '&amp; Reinhart 1998); üretimde ek ardışıklık kuralı Bry &amp; '
+                        'Boschan (1971) döngü tarihlemesine dayanır.</div>',
+                        unsafe_allow_html=True)
         else:
             st.info("Uyarı sistemi için yeterli veri yok.")
 
@@ -1812,12 +1936,21 @@ with tabs[7]:
                 sec_title(f"İSO 500 & İkinci 500'de {sector_tr}",
                           f"Türkiye'nin en büyük sanayi kuruluşları içindeki sektör fotoğrafı · {yil8}")
 
+            # Seçili para birimi (₺/$) — yıllık ortalama kurla dönüştürme
+            _kur8 = _kur_yil.get(yil8) if usd_mode else None
+            def _cur8(v):
+                """TL tutarı seçili para birimine çevirir (USD modunda yıl kuru)."""
+                if v is None: return None
+                return v / _kur8 if _kur8 else (None if usd_mode else v)
+
             # ── KPI satırı ──
             ic = st.columns(5)
             kpi_card(ic[0], "Listedeki Firma", f"{f8i['firma_sayisi']}",
                      f"İSO 500: {f8i['firma_500']} · İkinci 500: {f8i['firma_2_500']}",
                      icon="🏢")
-            kpi_card(ic[1], "Üretimden Satışlar", f"₺{f8i['toplam_uretim_satis']/1e9:,.0f} mlr".replace(",", "."),
+            _sat8 = _cur8(f8i['toplam_uretim_satis'])
+            kpi_card(ic[1], "Üretimden Satışlar",
+                     (f"{PARA_SIM}{_sat8/1e9:,.0f} mlr".replace(",", ".") if _sat8 is not None else "—"),
                      f"{yil8} toplamı" + (f" · pay %{f8i['pay_uretim']:.1f}"
                                           if f8i.get('pay_uretim') and nace != TOTAL_MANUFACTURING else ""),
                      icon="💼")
@@ -1836,22 +1969,24 @@ with tabs[7]:
 
             # ── Top 15 firma ──
             with il_l:
-                chart_head(f"En Büyük 15 Kuruluş", f"Üretimden satışlar, milyar ₺ · {yil8}")
+                _kdiv = _kur8 if (usd_mode and _kur8) else 1.0
+                chart_head(f"En Büyük 15 Kuruluş",
+                           f"Üretimden satışlar, milyar {PARA_SIM} · {yil8}")
                 fdf = f8i["firmalar"].head(15).iloc[::-1]
                 bar_c = [BRAND if l == "İSO 500" else "#93C5FD" for l in fdf["liste"]]
                 fig_i = go.Figure()
                 fig_i.add_trace(go.Bar(
                     y=[n[:36] + ("…" if len(n) > 36 else "") for n in fdf["firma"]],
-                    x=fdf["uretim_satis"] / 1e9,
+                    x=fdf["uretim_satis"] / _kdiv / 1e9,
                     orientation="h", marker_color=bar_c, marker_line_width=0,
                     marker=dict(cornerradius=3),
-                    text=[f"{v/1e9:,.1f}".replace(",", ".") for v in fdf["uretim_satis"]],
+                    text=[f"{v/_kdiv/1e9:,.1f}".replace(",", ".") for v in fdf["uretim_satis"]],
                     textposition="outside", cliponaxis=False,
                     textfont=dict(size=10, family="Inter"),
                     customdata=[[il, f"{e:,.0f}" if pd.notna(e) else "—",
                                  f"{int(c):,}".replace(",", ".") if pd.notna(c) else "—"]
                                 for il, e, c in zip(fdf["il"], fdf["ihracat_musd"], fdf["calisan"])],
-                    hovertemplate="<b>%{y}</b><br>Satış: ₺%{x:.1f} mlr<br>"
+                    hovertemplate="<b>%{y}</b><br>Satış: " + PARA_SIM + "%{x:.1f} mlr<br>"
                                   "İhracat: $%{customdata[1]} mn · Çalışan: %{customdata[2]}"
                                   "<br>%{customdata[0]}<extra></extra>",
                     width=0.62,
@@ -1870,18 +2005,24 @@ with tabs[7]:
                 # ── Yıllara göre sektör (İSO 500) ──
                 y500 = [r for r in f8i["yearly"] if r["liste"] == "İSO 500"]
                 if len(y500) >= 2:
-                    chart_head("İSO 500'de Sektör Trendi", "Üretimden satışlar (nominal) ve firma sayısı")
+                    chart_head("İSO 500'de Sektör Trendi",
+                               f"Üretimden satışlar ({'USD, yıl ort. kur' if usd_mode else 'nominal ₺'}) ve firma sayısı")
+                    def _tcur(r):
+                        k = _kur_yil.get(r["yil"]) if usd_mode else 1.0
+                        return (r["uretim_satis"] / k / 1e9) if k else None
+                    _tv = [_tcur(r) for r in y500]
                     fig_t = go.Figure()
                     fig_t.add_trace(go.Bar(
                         x=[str(r["yil"]) for r in y500],
-                        y=[r["uretim_satis"] / 1e9 for r in y500],
+                        y=_tv,
                         marker_color=[TRADE_IMP, BRAND][-len(y500):],
                         marker_line_width=0, marker=dict(cornerradius=4),
-                        text=[f"₺{r['uretim_satis']/1e9:,.0f} mlr<br>{r['firma']} firma".replace(",", ".")
-                              for r in y500],
+                        text=[(f"{PARA_SIM}{v:,.0f} mlr<br>{r['firma']} firma".replace(",", ".")
+                               if v is not None else "—")
+                              for r, v in zip(y500, _tv)],
                         textposition="inside",
                         textfont=dict(size=11, color="white", family="Inter"),
-                        hovertemplate="%{x}: <b>₺%{y:.0f} mlr</b><extra></extra>",
+                        hovertemplate="%{x}: <b>" + PARA_SIM + "%{y:.0f} mlr</b><extra></extra>",
                         width=0.5,
                     ))
                     fig_t.update_layout(**LAYOUT, height=240, showlegend=False,
@@ -1919,22 +2060,82 @@ with tabs[7]:
                     fig_il.update_yaxes(showgrid=False, tickfont=dict(size=10.5, color=INK_SOFT))
                     st.plotly_chart(fig_il, use_container_width=True, config=NOBAR)
 
+            # ── Firma Heterojenliği — dağılım analizi ──────────────────────────
+            # "Sektör iyi ama kim iyi?" — firma içi dağılım (Syverson 2011)
+            st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+            chart_head("Firma Heterojenliği",
+                       f"Sektör içi dağılımlar · {yil8} · kutu = çeyrekler arası aralık, çizgi = medyan")
+            _fh = f8i["firmalar"]
+            hh1, hh2, hh3 = st.columns(3, gap="medium")
+
+            def _box(col, seri_by_liste, baslik, alt, suffix="%"):
+                with col:
+                    st.markdown(f'<div class="chart-h" style="font-size:.78rem">{baslik}</div>'
+                                f'<div class="chart-hs">{alt}</div>', unsafe_allow_html=True)
+                    figb = go.Figure()
+                    for _lst, _vals, _renk in seri_by_liste:
+                        if len(_vals) >= 5:
+                            figb.add_trace(go.Box(
+                                y=_vals, name=_lst, marker_color=_renk,
+                                boxpoints="outliers", marker=dict(size=3, opacity=.5),
+                                line=dict(width=1.6), width=0.5,
+                                hovertemplate="%{y:.1f}" + suffix + "<extra>" + _lst + "</extra>"))
+                    if figb.data:
+                        figb.update_layout(**LAYOUT, height=280, showlegend=False,
+                                           margin=dict(l=8, r=8, t=6, b=26))
+                        figb.update_yaxes(ticksuffix=suffix)
+                        st.plotly_chart(figb, use_container_width=True, config=NOBAR)
+                    else:
+                        st.caption("Yeterli firma verisi yok (min. 5 beyan).")
+
+            def _liste_vals(seri):
+                out = []
+                for _lst, _renk in [("İSO 500", BRAND), ("İSO İkinci 500", "#93C5FD")]:
+                    v = seri[_fh["liste"] == _lst].dropna()
+                    v = v[(v > v.quantile(0.02)) & (v < v.quantile(0.98))] if len(v) >= 20 else v
+                    out.append((_lst, v.tolist(), _renk))
+                return out
+
+            _box(hh1, _liste_vals(_fh["favok_marj"]),
+                 "FAVÖK Marjı", "FAVÖK / net satış · kârlılık dağılımı")
+            _kur8y = _kur_yil.get(yil8)
+            if _kur8y and "net_satis" in _fh.columns:
+                _ihy = (_fh["ihracat_musd"] * 1e6 * _kur8y / _fh["net_satis"] * 100)
+                _ihy = _ihy.where((_fh["net_satis"] > 0))
+                _box(hh2, _liste_vals(_ihy),
+                     "İhracat Yoğunluğu", "ihracat (₺ karşılığı) / net satış")
+            else:
+                with hh2:
+                    st.caption("İhracat yoğunluğu için USD/TRY kuru gerekli "
+                               "(cache_all.py ile eklenir).")
+            if "aktif" in _fh.columns:
+                _adh = (_fh["net_satis"] / _fh["aktif"]).where(_fh["aktif"] > 0)
+                _box(hh3, _liste_vals(_adh),
+                     "Aktif Devir Hızı", "net satış / aktif toplamı · sermaye verimliliği",
+                     suffix="x")
+            st.markdown('<div class="src">Firma-içi dağılım: aynı sektörde kârlılık ve '
+                        'verimlilik farkları kalıcı ve büyüktür (Syverson 2011) — medyan '
+                        'sektörü, kutu genişliği rekabet heterojenliğini anlatır. Uç %2 '
+                        'kırpılmıştır.</div>', unsafe_allow_html=True)
+
             # ── Tam firma tablosu ──
             with st.expander(f"📋 Tüm sektör firmaları ({f8i['firma_sayisi']})"):
                 tdf = f8i["firmalar"].copy()
-                tdf["Satış (mlr ₺)"] = (tdf["uretim_satis"] / 1e9).round(2)
+                _sat_col = f"Satış (mlr {PARA_SIM})"
+                _tdiv = _kur8 if (usd_mode and _kur8) else 1.0
+                tdf[_sat_col] = (tdf["uretim_satis"] / _tdiv / 1e9).round(2)
                 tdf["İhracat (mn $)"] = tdf["ihracat_musd"].round(1)
                 tdf["FAVÖK %"] = tdf["favok_marj"].round(1)
-            
+
                 # Safe parsing for PyArrow to avoid crashes
                 tdf["sira"] = tdf["sira"].fillna(-1).astype(int).astype(str).replace("-1", "-")
                 tdf["il"] = tdf["il"].fillna("-").astype(str)
-            
+
                 tdf = tdf.rename(columns={"sira": "Sıra", "liste": "Liste",
                                           "firma": "Kuruluş", "il": "İl",
                                           "calisan": "Çalışan"})
                 st.dataframe(
-                    tdf[["Sıra", "Liste", "Kuruluş", "İl", "Satış (mlr ₺)",
+                    tdf[["Sıra", "Liste", "Kuruluş", "İl", _sat_col,
                          "İhracat (mn $)", "Çalışan", "FAVÖK %"]],
                     hide_index=True,
                     use_container_width=True, height=420)
@@ -2035,45 +2236,6 @@ with tabs[8]:
                         unsafe_allow_html=True)
 
 # ── TAB 9: ANALİST GÖRÜNÜMÜ ─────────────────────────────────────────────────────
-@st.cache_data(show_spinner=False)
-def cross_sector_panel(cache_key):
-    """24 sektörün son değerlerini türev metriklerle birlikte döner (percentil için)."""
-    rows = {}
-    for k in ALL_MANUFACTURING:
-        try:
-            g1 = build_sekil1(k, cache["alt_c"], ana_c_series=_ana_c)
-            g3 = build_sekil3(k, cache["dis_ticaret"])
-            g4 = build_sekil4(k, cache["kko"])
-            g5 = build_sekil5(k, cache["ufe"])
-            g6 = build_sekil6(k, cache["ciro"])    if "ciro"    in cache else {}
-            g7 = build_sekil7(k, cache["ucretli"]) if "ucretli" in cache else {}
-            prod = merged_avg_series(g1)
-            ciro = first_serie_sorted(g6)
-            ufe  = first_serie_sorted(g5)
-            emp  = first_serie_sorted(g7)
-            ihd  = {p: v for lbl, s in g3.items()
-                    if "hracat" in lbl and "thalat" not in lbl for p, v in s.items()}
-            reel = real_growth(ciro, ufe)
-            verim = ratio_growth(prod, emp)
-            kko_s = {kk: vv for kk, vv in g4.items() if "anayii" not in kk}
-            rows[k] = {
-                "uretim":    last_value(prod)[1],
-                "reel_ciro": last_value(reel)[1],
-                "ihracat":   last_value(ihd)[1] if ihd else None,
-                "verim":     last_value(verim)[1],
-                "kko":       last_value(first_serie_sorted(kko_s))[1] if kko_s else None,
-            }
-        except Exception:
-            continue
-    return rows
-
-def _pct_rank(values, target):
-    """target'ın values içindeki yüzdelik dilimi (0-100)."""
-    vals = [v for v in values if v is not None]
-    if target is None or len(vals) < 2: return None
-    below = sum(1 for v in vals if v < target)
-    return round(below / (len(vals) - 1) * 100)
-
 with tabs[9]:
     sec_title("Analist Görünümü",
               "Reel büyüme, verimlilik, momentum ve karşılaştırmalı konumlanma · türev göstergeler")
@@ -2305,55 +2467,10 @@ with tabs[9]:
     else:
         st.info("Korelasyon matrisi için yeterli veri yok.")
 
-    st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
-
-
-    if nace != TOTAL_MANUFACTURING:
-        sec_title("Sektör Konumlanması",
-                  f"{nace} · 24 imalat sektörü içindeki yüzdelik dilim (100 = en iyi)")
-        panel = cross_sector_panel(cache_date)
-        if panel and nace in panel:
-            metrics = [
-                ("Üretim büyümesi",  "uretim",    False),
-                ("Reel ciro",        "reel_ciro", False),
-                ("İhracat büyümesi", "ihracat",   False),
-                ("Verimlilik",       "verim",     False),
-                ("Kapasite (KKO)",   "kko",       False),
-            ]
-            rows_pct, cur = [], panel[nace]
-            for label, key, inv in metrics:
-                allv = [panel[k].get(key) for k in panel]
-                pr = _pct_rank(allv, cur.get(key))
-                if pr is not None:
-                    rows_pct.append((label, pr, cur.get(key)))
-            if rows_pct:
-                names = [r[0] for r in rows_pct][::-1]
-                prs   = [r[1] for r in rows_pct][::-1]
-                raws  = [r[2] for r in rows_pct][::-1]
-                bcol  = [POS if p >= 66 else AMBER if p >= 33 else NEG for p in prs]
-                fig = go.Figure(go.Bar(
-                    y=names, x=prs, orientation="h",
-                    marker_color=bcol, marker_line_width=0, marker=dict(cornerradius=3),
-                    text=[f"%{p} dilim · {rv:+.1f}%" if rv is not None else f"%{p}"
-                          for p, rv in zip(prs, raws)],
-                    textposition="outside", cliponaxis=False,
-                    textfont=dict(size=10.5, family="Inter"),
-                    hovertemplate="%{y}: <b>%{x}. yüzdelik</b><extra></extra>", width=0.6))
-                fig.update_layout(**LAYOUT, height=270, showlegend=False, hovermode="closest",
-                                  margin=dict(l=8, r=90, t=8, b=24))
-                fig.update_xaxes(range=[0, 118], showticklabels=False, showline=False)
-                fig.update_yaxes(showgrid=False, tickfont=dict(size=11, color=INK_SOFT))
-                fig.add_vline(x=50, line_width=1, line_dash="dot", line_color="#CBD5E1")
-                st.plotly_chart(fig, use_container_width=True, config=NOBAR)
-                st.markdown('<div class="src">Yeşil: ilk üçte bir · Sarı: orta · Kırmızı: son üçte bir · '
-                            'Kesik çizgi = medyan (50). Karşılaştırma: 24 imalat alt sektörü, son dönem</div>',
-                            unsafe_allow_html=True)
-        else:
-            st.info("Konumlanma hesaplanamadı.")
-    else:
-        st.markdown('<div class="src">Konumlanma yüzdelikleri tekil sektörler için gösterilir; '
-                    'toplam imalat sanayii seçiliyken bu bölüm devre dışıdır.</div>',
-                    unsafe_allow_html=True)
+    st.markdown('<div class="src">Sektörün 24 imalat sektörü içindeki yüzdelik konumlanması '
+                'Genel Bakış sekmesindeki <b>Sektör Bileşik Skoru</b>nda gösterilir '
+                '(sıra-tabanlı normalizasyon, tek bileşik gösterge).</div>',
+                unsafe_allow_html=True)
 
 # ── TAB 10: ÜRÜN DETAYI (PRODTR) ─────────────────────────────────────────────────
 with tabs[10]:
@@ -2368,13 +2485,19 @@ with tabs[10]:
         def _trnum(v, nd=1):
             return f"{v:,.{nd}f}".replace(",", "§").replace(".", ",").replace("§", ".")
 
-        def _para(v):
+        def _para(v, sym=None):
+            sym = sym if sym is not None else PARA_SIM
             if v is None: return "—"
             a = abs(v)
-            if a >= 1e9: return f"₺{_trnum(v/1e9, 1)} mlr"
-            if a >= 1e6: return f"₺{_trnum(v/1e6, 1)} mn"
-            if a >= 1e3: return f"₺{_trnum(v/1e3, 1)} bin"
-            return f"₺{_trnum(v, 2)}"
+            if a >= 1e9: return f"{sym}{_trnum(v/1e9, 1)} mlr"
+            if a >= 1e6: return f"{sym}{_trnum(v/1e6, 1)} mn"
+            if a >= 1e3: return f"{sym}{_trnum(v/1e3, 1)} bin"
+            return f"{sym}{_trnum(v, 2)}"
+
+        # Seçili para birimi: TL serilerini yıllık ortalama kurla çevirir.
+        # Reel (YİÜFE) arındırma yalnız TL modunda gösterilir — USD serisi
+        # zaten ortak paydadadır, iki kez arındırma yanıltıcı olur.
+        _c9 = to_cur_yillik
 
         def _birim_kisa(b):
             m = re.search(r"\(([^)]+)\)", b or "")
@@ -2444,7 +2567,9 @@ with tabs[10]:
         sec_title(f"Ürün Detayı — {sector_tr}",
                   f"TÜİK Sanayi Ürün İstatistikleri (PRODTR) · fiziksel ürün bazında üretim ve satış · {yil9}")
 
-        _yn9 = _yoy9(trend9, yil9)          # nominal büyüme
+        trend9c = _c9(trend9)               # seçili para biriminde trend
+        _yn9 = _yoy9(trend9, yil9)          # nominal ₺ büyüme
+        _yu9 = _yoy9(trend9c, yil9) if usd_mode else None   # USD bazlı büyüme
         _yr9 = _reel_yoy9(trend9, yil9)     # YİÜFE ile arındırılmış büyüme
         _tone9 = (None if _yr9 is None and _yn9 is None
                   else ("pos" if (_yr9 if _yr9 is not None else _yn9) >= 0 else "neg"))
@@ -2453,18 +2578,22 @@ with tabs[10]:
         kpi_card(pc[0], "Ürün Çeşidi", f"{f9['urun_sayisi']}",
                  f"{len(son_rows9)} üründe {yil9} verisi · {f9['veri_urun']} üründe tarihsel seri",
                  icon="🧴")
-        kpi_card(pc[1], "Toplam Satış", _para(toplam_son),
-                 (f"reel {_yr9:+.1f}% (YİÜFE arındırılmış)".replace(".", ",")
-                  if _yr9 is not None else f"{yil9} · ürün satış değeri"),
-                 tone=_tone9,
-                 badge=(f"{_yn9:+.1f}".replace(".", ",") + "% nominal" if _yn9 is not None else None),
+        if usd_mode:
+            _ts_sub = (f"USD bazında {_yu9:+.1f}".replace(".", ",") + "% YoY (yıl ort. kur)"
+                       if _yu9 is not None else f"{yil9} · yıl ort. kurla USD")
+        else:
+            _ts_sub = (f"reel {_yr9:+.1f}% (YİÜFE arındırılmış)".replace(".", ",")
+                       if _yr9 is not None else f"{yil9} · ürün satış değeri")
+        kpi_card(pc[1], "Toplam Satış", _para(trend9c.get(yil9)),
+                 _ts_sub, tone=_tone9,
+                 badge=(f"{_yn9:+.1f}".replace(".", ",") + "% nominal ₺" if _yn9 is not None else None),
                  icon="💰")
         kpi_card(pc[2], "Ürün Yoğunlaşması", f"%{cr5_9:,.0f}",
                  f"CR5 · HHI {hhi9:,.0f} ({hhi_lbl}) · {yil9} ürün sepeti".replace(",", "."),
                  icon="🎯")
         _top1 = son_rows9[0] if son_rows9 else None
         kpi_card(pc[3], "En Büyük Ürün",
-                 _para(_top1["seri_satis"][yil9]) if _top1 else "—",
+                 _para(tl_to_cur(_top1["seri_satis"][yil9], yil9)) if _top1 else "—",
                  (_top1["tanim"][:38] + "…" if _top1 and len(_top1["tanim"]) > 38
                   else (_top1["tanim"] if _top1 else "—")),
                  badge=(f"%{paylar9[0]:.1f} pay".replace(".", ",") if paylar9 else None),
@@ -2474,22 +2603,23 @@ with tabs[10]:
         pl, pr = st.columns([5, 4], gap="large")
 
         with pl:
-            chart_head(f"En Büyük 12 Ürün", f"Satış değeri, milyar ₺ · {yil9}")
+            chart_head(f"En Büyük 12 Ürün", f"Satış değeri, milyar {PARA_SIM} · {yil9}")
             top = son_rows9[:12][::-1]
-            if top:
+            _kd9 = _kur_yil.get(yil9, 1.0) if usd_mode else 1.0
+            if top and _kd9:
                 fig = go.Figure(go.Bar(
                     y=[_lbl9(t) for t in top],
-                    x=[t["seri_satis"][yil9]/1e9 for t in top],
+                    x=[t["seri_satis"][yil9]/_kd9/1e9 for t in top],
                     orientation="h", marker_color=BRAND, marker_line_width=0,
                     marker=dict(cornerradius=3),
-                    text=[f"{t['seri_satis'][yil9]/1e9:,.1f}".replace(",", ".") for t in top],
+                    text=[f"{t['seri_satis'][yil9]/_kd9/1e9:,.1f}".replace(",", ".") for t in top],
                     textposition="outside", cliponaxis=False,
                     textfont=dict(size=10, family="Inter"),
                     customdata=[[t["tanim"],
                                  t["seri_girisim"].get(yil9) or "—",
                                  f"{t['seri_satis'][yil9]/toplam_son*100:.1f}" if toplam_son else "—"]
                                 for t in top],
-                    hovertemplate="<b>%{customdata[0]}</b><br>Satış: ₺%{x:.2f} mlr · "
+                    hovertemplate="<b>%{customdata[0]}</b><br>Satış: " + PARA_SIM + "%{x:.2f} mlr · "
                                   "Pay: %%{customdata[2]} · Girişim: %{customdata[1]}<extra></extra>",
                     width=0.7,
                 ))
@@ -2503,17 +2633,18 @@ with tabs[10]:
 
         with pr:
             chart_head("Sektör Satış Değeri Trendi",
-                       f"Tüm ürünler toplamı · milyar ₺ · nominal ve reel ({yil9} fiyatlarıyla)")
-            if trend9:
-                yrs = sorted(trend9.keys())
+                       (f"Tüm ürünler toplamı · milyar $ · yıllık ort. kurla" if usd_mode else
+                        f"Tüm ürünler toplamı · milyar ₺ · nominal ve reel ({yil9} fiyatlarıyla)"))
+            if trend9c:
+                yrs = sorted(trend9c.keys())
                 fig2 = go.Figure()
                 fig2.add_trace(go.Scatter(
-                    x=[str(y) for y in yrs], y=[trend9[y]/1e9 for y in yrs],
-                    name="Nominal", mode="lines",
+                    x=[str(y) for y in yrs], y=[trend9c[y]/1e9 for y in yrs],
+                    name=("USD" if usd_mode else "Nominal"), mode="lines",
                     line=dict(color=BRAND, width=2.6, shape="spline", smoothing=.6),
                     fill="tozeroy", fillcolor="rgba(37,99,235,.07)",
-                    hovertemplate="Nominal: <b>₺%{y:.0f} mlr</b><extra></extra>"))
-                reel_tr = _reel9(trend9, yil9)
+                    hovertemplate="<b>" + PARA_SIM + "%{y:.1f} mlr</b><extra></extra>"))
+                reel_tr = {} if usd_mode else _reel9(trend9, yil9)
                 if len(reel_tr) >= 2:
                     ry = sorted(reel_tr)
                     fig2.add_trace(go.Scatter(
@@ -2524,9 +2655,13 @@ with tabs[10]:
                 fig2.update_layout(**LAYOUT, height=300, showlegend=len(reel_tr) >= 2)
                 fig2.update_yaxes(ticksuffix="")
                 st.plotly_chart(fig2, use_container_width=True, config=NOBAR)
-                st.markdown('<div class="src">Reel seri sektörel yurt içi ÜFE ile arındırılmıştır '
-                            '(YİÜFE 2015+). Gizli (c) beyan edilen ürünler toplama dahil edilmez; '
-                            'seriler alt sınır niteliğindedir.</div>', unsafe_allow_html=True)
+                _src2 = ('USD serisi yıllık ortalama USD/TRY ile çevrilmiştir (TCMB); '
+                         'kur hareketleri seriye yansır, birim değer yorumunda dikkat. '
+                         if usd_mode else
+                         'Reel seri sektörel yurt içi ÜFE ile arındırılmıştır (YİÜFE 2015+). ')
+                st.markdown(f'<div class="src">{_src2}Gizli (c) beyan edilen ürünler '
+                            'toplama dahil edilmez; seriler alt sınır niteliğindedir.</div>',
+                            unsafe_allow_html=True)
 
         # ── Yapı & dinamikler: fiziksel momentum + Pareto yoğunlaşması ──────────
         st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
@@ -2627,25 +2762,28 @@ with tabs[10]:
                                    key=lambda r: (r["seri_satis"].get(yil9) is not None,
                                                   r["satis_deger"] or 0),
                                    reverse=True)
+            _satcol9 = f"Satış (mlr {PARA_SIM})"
+            _bdcol9  = f"Birim Değer {PARA_SIM}"
             rows = []
             for r in base_rows:
                 ss, smk = r["seri_satis"], r.get("seri_miktar") or {}
-                sv = r.get("satis_deger")
+                sv = tl_to_cur(r.get("satis_deger"), r.get("satis_yil"))
                 pay = (ss[yil9] / toplam_son * 100
                        if toplam_son and ss.get(yil9) is not None else None)
                 yoy = _yoy9(ss, yil9)
                 mg  = _cagr9(smk)
-                bd  = (ss[yil9] / smk[yil9]
-                       if ss.get(yil9) and smk.get(yil9) else None)
+                bd  = (tl_to_cur(ss[yil9], yil9) / smk[yil9]
+                       if ss.get(yil9) and smk.get(yil9)
+                       and tl_to_cur(ss[yil9], yil9) is not None else None)
                 rows.append({
                     "PRODTR": r["kod"],
                     "Ürün": r.get("tanim", ""),
-                    "Satış (mlr ₺)": round(sv/1e9, 3) if sv else None,
+                    _satcol9: round(sv/1e9, 3) if sv else None,
                     "Yıl": r.get("satis_yil"),
                     "Pay %": round(pay, 2) if pay is not None else None,
                     "YoY %": round(yoy, 1) if yoy is not None else None,
                     "Miktar CAGR₅ %": round(mg, 1) if mg is not None else None,
-                    "Birim Değer ₺": round(bd, 2) if bd is not None else None,
+                    _bdcol9: round(bd, 2) if bd is not None else None,
                     "Üretim": r.get("uretim"),
                     "Birim": _birim_kisa(r.get("birim", "")),
                     "Girişim": r.get("girisim"),
@@ -2660,8 +2798,8 @@ with tabs[10]:
                 df9.set_index("PRODTR"), use_container_width=True, height=440,
                 column_config={
                     "Ürün": st.column_config.TextColumn("Ürün", width="large"),
-                    "Satış (mlr ₺)": st.column_config.NumberColumn(
-                        "Satış (mlr ₺)", format="%.3f",
+                    _satcol9: st.column_config.NumberColumn(
+                        _satcol9, format="%.3f",
                         help="Ürünün son veri yılındaki satış değeri"),
                     "Yıl": st.column_config.NumberColumn(
                         "Yıl", format="%d", help="Son veri yılı — eski yıllar nominal TL "
@@ -2676,9 +2814,9 @@ with tabs[10]:
                         "Miktar CAGR₅", format="%+.1f%%",
                         help="Satış miktarının ~5 yıllık bileşik büyümesi "
                              "(fiziksel — enflasyondan bağımsız)"),
-                    "Birim Değer ₺": st.column_config.NumberColumn(
-                        "Birim Değer ₺", format="%.2f",
-                        help=f"{yil9} satış değeri ÷ satış miktarı (₺/birim)"),
+                    _bdcol9: st.column_config.NumberColumn(
+                        _bdcol9, format="%.2f",
+                        help=f"{yil9} satış değeri ÷ satış miktarı ({PARA_SIM}/birim)"),
                 })
             st.download_button(
                 "⬇ Tabloyu CSV indir", df9.to_csv(index=False).encode("utf-8-sig"),
@@ -2706,14 +2844,17 @@ with tabs[10]:
             else:
                 sdd, smm = det["satis_deger"], det["satis_miktar"]
                 udd, grr = det["uretim"], det["girisim"]
+                sdd_c = _c9(sdd)          # seçili para biriminde satış değeri
                 bk = _birim_kisa(det["birim"])
                 tum_yil = sorted(set(sdd) | set(smm) | set(udd) | set(grr))
                 aralik = f"{tum_yil[0]}–{tum_yil[-1]}" if tum_yil else "—"
                 y_son = max(sdd) if sdd else (max(udd) if udd else None)
 
-                # Birim değer serisi: satış değeri ÷ satış miktarı (₺/birim)
+                # Birim değer serisi: satış değeri ÷ satış miktarı (₺ bazlı; görünüm için çevrilir)
                 bd_seri = {y: sdd[y]/smm[y] for y in sdd
                            if smm.get(y) and sdd[y] is not None}
+                bd_seri_c = {y: sdd_c[y]/smm[y] for y in sdd_c
+                             if smm.get(y) and sdd_c[y] is not None}
 
                 st.markdown(f"""<div class="report" style="padding:1rem 1.2rem;margin-bottom:.8rem">
                     <b style="font-size:1rem">{det['tanim']}</b><br>
@@ -2725,12 +2866,18 @@ with tabs[10]:
                 if y_son is not None:
                     mk = st.columns(4)
                     _ys  = _yoy9(sdd, y_son); _yrr = _reel_yoy9(sdd, y_son)
-                    kpi_card(mk[0], f"Satış Değeri ({y_son})", _para(sdd.get(y_son)),
-                             (f"reel {_yrr:+.1f}%".replace(".", ",") + " (YİÜFE arınd.)"
-                              if _yrr is not None else "nominal satış değeri"),
+                    _yus = _yoy9(sdd_c, y_son) if usd_mode else None
+                    if usd_mode:
+                        _sd_sub = (f"USD bazında {_yus:+.1f}% YoY".replace(".", ",")
+                                   if _yus is not None else "yıl ort. kurla USD")
+                    else:
+                        _sd_sub = (f"reel {_yrr:+.1f}%".replace(".", ",") + " (YİÜFE arınd.)"
+                                   if _yrr is not None else "nominal satış değeri")
+                    kpi_card(mk[0], f"Satış Değeri ({y_son})", _para(sdd_c.get(y_son)),
+                             _sd_sub,
                              tone=(None if _yrr is None and _ys is None
                                    else ("pos" if (_yrr if _yrr is not None else _ys) >= 0 else "neg")),
-                             badge=(f"{_ys:+.1f}".replace(".", ",") + "% nominal" if _ys is not None else None),
+                             badge=(f"{_ys:+.1f}".replace(".", ",") + "% nominal ₺" if _ys is not None else None),
                              icon="💰")
                     _ym = _yoy9(smm, y_son)
                     kpi_card(mk[1], f"Satış Miktarı ({y_son})",
@@ -2740,9 +2887,9 @@ with tabs[10]:
                              tone=(None if _ym is None else ("pos" if _ym >= 0 else "neg")),
                              badge=(f"{_ym:+.1f}%".replace(".", ",") if _ym is not None else None),
                              icon="📦")
-                    _yb = _yoy9(bd_seri, y_son)
+                    _yb = _yoy9(bd_seri_c, y_son)
                     kpi_card(mk[2], "Birim Değer",
-                             (f"{_para(bd_seri[y_son])}/{bk}" if bd_seri.get(y_son) else "—"),
+                             (f"{_para(bd_seri_c[y_son])}/{bk}" if bd_seri_c.get(y_son) else "—"),
                              "satış değeri ÷ satış miktarı",
                              badge=(f"{_yb:+.1f}%".replace(".", ",") if _yb is not None else None),
                              tone=(None if _yb is None else ("pos" if _yb >= 0 else "neg")),
@@ -2759,16 +2906,17 @@ with tabs[10]:
 
                 dc1, dc2 = st.columns(2, gap="large")
                 with dc1:
-                    if sd_ys := sorted(sdd):
+                    if sd_ys := sorted(sdd_c):
                         chart_head("Satış Değeri",
-                                   f"milyar ₺ · {sd_ys[0]}–{sd_ys[-1]} · nominal + reel")
+                                   (f"milyar $ · {sd_ys[0]}–{sd_ys[-1]} · yıl ort. kurla" if usd_mode
+                                    else f"milyar ₺ · {sd_ys[0]}–{sd_ys[-1]} · nominal + reel"))
                         figd = go.Figure()
                         figd.add_trace(go.Bar(
-                            x=[str(y) for y in sd_ys], y=[sdd[y]/1e9 for y in sd_ys],
-                            name="Nominal", marker_color=BRAND,
+                            x=[str(y) for y in sd_ys], y=[sdd_c[y]/1e9 for y in sd_ys],
+                            name=("USD" if usd_mode else "Nominal"), marker_color=BRAND,
                             marker_line_width=0, marker=dict(cornerradius=3),
-                            hovertemplate="Nominal: <b>₺%{y:.3f} mlr</b><extra></extra>"))
-                        sd_reel = _reel9(sdd, y_son)
+                            hovertemplate="<b>" + PARA_SIM + "%{y:.3f} mlr</b><extra></extra>"))
+                        sd_reel = {} if usd_mode else _reel9(sdd, y_son)
                         if len(sd_reel) >= 2:
                             r_ys = sorted(sd_reel)
                             figd.add_trace(go.Scatter(
@@ -2780,7 +2928,7 @@ with tabs[10]:
                                            showlegend=len(sd_reel) >= 2)
                         st.plotly_chart(figd, use_container_width=True, config=NOBAR)
                     else:
-                        chart_head("Satış Değeri", "milyar ₺")
+                        chart_head("Satış Değeri", f"milyar {PARA_SIM}")
                         st.caption("Satış değeri verisi gizli/yok.")
                 with dc2:
                     if udd or smm:
@@ -2812,18 +2960,18 @@ with tabs[10]:
 
                 dc3, dc4 = st.columns(2, gap="large")
                 with dc3:
-                    if len(bd_seri) >= 2:
-                        b_ys = sorted(bd_seri)
+                    if len(bd_seri_c) >= 2:
+                        b_ys = sorted(bd_seri_c)
                         chart_head("Birim Değer",
-                                   f"₺/{bk} · {b_ys[0]}–{b_ys[-1]} · ürünün ortalama fiyat düzeyi")
+                                   f"{PARA_SIM}/{bk} · {b_ys[0]}–{b_ys[-1]} · ürünün ortalama fiyat düzeyi")
                         figb = go.Figure()
                         figb.add_trace(go.Scatter(
-                            x=[str(y) for y in b_ys], y=[bd_seri[y] for y in b_ys],
-                            name="Nominal", mode="lines+markers",
+                            x=[str(y) for y in b_ys], y=[bd_seri_c[y] for y in b_ys],
+                            name=("USD" if usd_mode else "Nominal"), mode="lines+markers",
                             line=dict(color=AMBER, width=2.2),
                             marker=dict(size=5),
-                            hovertemplate="Nominal: <b>₺%{y:,.2f}</b><extra></extra>"))
-                        bd_reel = _reel9(bd_seri, y_son)
+                            hovertemplate="<b>" + PARA_SIM + "%{y:,.2f}</b><extra></extra>"))
+                        bd_reel = {} if usd_mode else _reel9(bd_seri, y_son)
                         if len(bd_reel) >= 2:
                             br_ys = sorted(bd_reel)
                             figb.add_trace(go.Scatter(
@@ -2834,12 +2982,16 @@ with tabs[10]:
                         figb.update_layout(**LAYOUT, height=250,
                                            showlegend=len(bd_reel) >= 2)
                         st.plotly_chart(figb, use_container_width=True, config=NOBAR)
-                        st.markdown('<div class="src">Reel birim değerdeki düşüş fiyat '
-                                    'rekabetine/değer kaybına, artış premiumlaşmaya işaret '
-                                    'eder (sektörel YİÜFE ile arındırılmış).</div>',
+                        _bd_src = ('USD birim değer, dolar bazlı ihraç fiyatı kıyası için '
+                                   'uygundur; kur oynaklığı seriye yansır.'
+                                   if usd_mode else
+                                   'Reel birim değerdeki düşüş fiyat rekabetine/değer '
+                                   'kaybına, artış premiumlaşmaya işaret eder (sektörel '
+                                   'YİÜFE ile arındırılmış).')
+                        st.markdown(f'<div class="src">{_bd_src}</div>',
                                     unsafe_allow_html=True)
                     else:
-                        chart_head("Birim Değer", f"₺/{bk}")
+                        chart_head("Birim Değer", f"{PARA_SIM}/{bk}")
                         st.caption("Birim değer için yeterli satış değeri+miktarı çifti yok.")
                 with dc4:
                     if grr:
@@ -2973,6 +3125,12 @@ with tabs[11]:
         <div class="r-head">9. Google News RSS</div>
         <p class="r-para">Sektöre özel anahtar kelimelerle Google News RSS akışından son haberler çekilir.
         Zaman filtresi (24 saat – 1 yıl) Google'ın <code>when:</code> operatörüyle sunucu tarafında uygulanır.</p>
+
+        <div class="r-head">10. TCMB — Kur Arşivi (USD/TRY)</div>
+        <p class="r-para">Kaynak: TCMB günlük gösterge kurları arşivi (<code>tcmb.gov.tr/kurlar</code>).<br>
+        2005'ten bugüne aylık USD satış kuru (ayın ortasındaki ilk iş günü). Makro Bağlam
+        şeridinde ve ₺/$ para birimi dönüşümünde (yıllık ortalama) kullanılır.
+        EVDS anahtarı tanımlıysa önbellek yenilemede aylık ortalama seriye geçilir.</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -3043,18 +3201,37 @@ with tabs[11]:
         Satış <i>miktarı</i> üzerinden hesaplandığından fiyat/enflasyon etkisi içermez;
         |CAGR| &gt; %80 gözlemler olası birim/kapsam kırılması nedeniyle elenir.</p>
 
-        <div class="r-head">Sektör Sağlık Skoru (0–100)</div>
-        <p class="r-para">6 gösterge min–maks bantlarla 0–100'e normalize edilip eşit ağırlıkla
-        ortalamalanır — kompozit gösterge inşasında temel yöntem (OECD &amp; JRC 2008):<br>
-        • Üretim [−15, +15] · İhracat [−20, +20] · Ciro [−25, +40] · İstihdam [−10, +10]<br>
-        • KKO farkı (sektör−imalat) [−10, +10] · Maliyet avantajı (imalat ÜFE−sektör ÜFE) [−15, +15]<br>
-        Kırmızı: &lt;40 · Sarı: 40–60 · Yeşil: &gt;60. Bantlar imalat sanayii tarihsel
-        dağılımına göre uzman yargısıyla belirlenmiş sabitlerdir (duyarlılık: eşit ağırlık varsayımı).</p>
+        <div class="r-head">Sektör Bileşik Skoru (0–100, yüzdelik tabanlı)</div>
+        <p class="r-para">7 gösterge (üretim, reel ciro, ihracat, verimlilik, istihdam, KKO,
+        maliyet) için sektörün 24 imalat sektörü içindeki yüzdelik dilimi hesaplanır:
+        <code>PR = (altında kalan sektör sayısı) / (n−1) × 100</code>; skor bu yüzdeliklerin
+        eşit ağırlıklı ortalamasıdır. Sıra-tabanlı normalizasyon, kompozit gösterge
+        el kitabındaki standart yöntemlerdendir (OECD &amp; JRC 2008) ve keyfî bant
+        seçimini ortadan kaldırır — <i>önceki sürümdeki uzman-yargısı bantları
+        ([−15,+15] vb.) bu gerekçeyle terk edilmiştir.</i> Maliyet göstergesinde işaret
+        çevrilir (düşük ÜFE = iyi). Dağılım varsayımı gerektirmez, aykırı değere dayanıklıdır.</p>
 
-        <div class="r-head">Sektör Konumlanması (Yüzdelik Dilim)</div>
-        <p class="r-para">Seçili sektörün 24 imalat alt sektörü içindeki sıra istatistiği:
-        <code>PR = (altında kalan sektör sayısı) / (n−1) × 100</code>.
-        Dağılım varsayımı gerektirmeyen, aykırı değere dayanıklı göreli konum ölçüsü.</p>
+        <div class="r-head">Erken Uyarı — Sinyal Yaklaşımı</div>
+        <p class="r-para">Her gösterge, son değerinin <i>kendi tarihsel dağılımı</i> içindeki
+        yüzdeliğiyle değerlendirilir (sinyal eşiği yaklaşımı; Kaminsky, Lizondo &amp;
+        Reinhart 1998): P10 altı 🔴 alarm, P25 altı 🟡 dikkat, üstü 🟢 normal
+        (min. 24 gözlem). Üretimde ek kural: 3 ay üst üste negatif YoY → 🔴 —
+        aylık konjonktür tarihlemesindeki minimum evre süresi geleneğine dayanır
+        (Bry &amp; Boschan 1971). Maliyet makası (sektör−imalat ÜFE) ters işaretle
+        değerlendirilir.</p>
+
+        <div class="r-head">Firma Heterojenliği (İSO 500)</div>
+        <p class="r-para">FAVÖK marjı, ihracat yoğunluğu (ihracat ₺ karşılığı / net satış) ve
+        aktif devir hızı (net satış / aktif) dağılımları kutu grafiğiyle gösterilir.
+        Aynı dar sektörde bile firmalar arası verimlilik/kârlılık farklarının büyük ve
+        kalıcı olduğu bulgusuna dayanır (Syverson 2011). Uç %2 kırpılır (winsorizasyon).</p>
+
+        <div class="r-head">USD Dönüşümü (₺/$ Görünümü)</div>
+        <p class="r-para">Yıllık TL tutarlar, TCMB kur arşivinden derlenen aylık USD/TRY
+        satış kurunun <i>yıllık ortalamasıyla</i> çevrilir (ayın ortasındaki ilk iş günü
+        gözlemi). Dolar bazlı seri, yüksek enflasyon ortamında kaba bir reel/uluslararası
+        kıyas sağlar; ancak kur oynaklığı seriye yansıdığından YİÜFE ile arındırılmış
+        reel serinin yerine geçmez — USD modunda reel çizgi bu nedenle gösterilmez.</p>
 
         <div class="r-head">Korelasyon Matrisi</div>
         <p class="r-para">24 sektörün son 24 aylık üretim YoY serileri arasındaki Pearson
@@ -3076,10 +3253,14 @@ with tabs[11]:
     st.markdown("""
     <div class="report" style="font-size:.78rem;line-height:1.85;">
     <p class="r-para">
+    Bry, G. &amp; Boschan, C. (1971). <i>Cyclical Analysis of Time Series: Selected
+    Procedures and Computer Programs</i>. New York: NBER.<br>
     Eurostat (2016). <i>Handbook on Prices and Volume Measures in National Accounts</i>.
     Luxembourg: Publications Office of the European Union.<br>
     Herfindahl, O. C. (1950). <i>Concentration in the U.S. Steel Industry</i>.
     Doktora tezi, Columbia University.<br>
+    Kaminsky, G., Lizondo, S. &amp; Reinhart, C. M. (1998). "Leading Indicators of
+    Currency Crises." <i>IMF Staff Papers</i>, 45(1), 1–48.<br>
     Hirschman, A. O. (1964). "The Paternity of an Index."
     <i>American Economic Review</i>, 54(5), 761–762.<br>
     Kravis, I. B. &amp; Lipsey, R. E. (1971). <i>Price Competitiveness in World Trade</i>.
@@ -3094,6 +3275,8 @@ with tabs[11]:
     Döviz Kuru Endeksleri." <i>TCMB Çalışma Tebliği</i> No. 10/12.<br>
     Solow, R. M. (1957). "Technical Change and the Aggregate Production Function."
     <i>Review of Economics and Statistics</i>, 39(3), 312–320.<br>
+    Syverson, C. (2011). "What Determines Productivity?"
+    <i>Journal of Economic Literature</i>, 49(2), 326–365.<br>
     United Nations (2011). <i>International Merchandise Trade Statistics:
     Concepts and Definitions 2010 (IMTS 2010)</i>. New York: UN Statistics Division.<br>
     U.S. Department of Justice &amp; Federal Trade Commission (2023).

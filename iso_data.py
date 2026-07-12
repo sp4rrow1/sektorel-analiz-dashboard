@@ -214,9 +214,10 @@ def sector_iso(nace, year=None):
     out['iller'] = [{'il': str(i), 'firma': int(r['firma']), 'satis': float(r['satis'])}
                     for i, r in il.iterrows()]
 
-    # ── Tam firma listesi (dashboard tablosu için) ───────────────────────────
+    # ── Tam firma listesi (dashboard tablosu + dağılım analizi için) ─────────
     out['firmalar'] = cur[['sira', 'liste', 'firma', 'il', 'uretim_satis',
-                           'ihracat_musd', 'calisan', 'favok_marj']].copy()
+                           'net_satis', 'aktif', 'ihracat_musd', 'calisan',
+                           'favok_marj']].copy()
     return out
 
 
