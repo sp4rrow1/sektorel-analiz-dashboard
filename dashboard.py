@@ -862,30 +862,45 @@ with st.sidebar:
 sector    = SECTOR_NAMES.get(nace, nace)
 sector_tr = nace_name(nace) if nace in NACE_NAMES else sector
 
-with st.spinner("Hesaplanıyor…"):
+@st.cache_data(show_spinner=False, max_entries=32)
+def compute_sector(nace, ver):
+    """
+    Bir sektörün tüm türetilmiş serilerini hesaplar ve önbelleğe alır.
+    Performans: slider/tab gibi etkileşimlerde yeniden hesaplanmaz — yalnızca
+    sektör veya veri sürümü (ver) değişince. Referans: performance.md.
+    """
     _ana_c = cache.get("ana_c")
-    f1 = build_sekil1(nace, cache["alt_c"], ana_c_series=_ana_c)
-    f2 = build_sekil2(nace, cache["sinif_o"], ana_c_series=_ana_c)
-    f3 = build_sekil3(nace, cache["dis_ticaret"])
-    f4 = build_sekil4(nace, cache["kko"])
-    f5 = build_sekil5(nace, cache["ufe"])
-    f6 = build_sekil6(nace, cache["ciro"])    if "ciro"    in cache else {}
-    f7 = build_sekil7(nace, cache["ucretli"]) if "ucretli" in cache else {}
-    
-    f_fiyat = build_dis_ticaret_fiyat(nace, cache.get("dis_ticaret_fiyat", {}))
-    f_su    = build_saat_ucret(nace, cache.get("saat_ucret", {}))
-    f_ydufe = build_ydufe(nace, cache.get("ydufe", []))
-    f_tufe  = build_tufe(cache.get("tufe", []))
+    out = {
+        "f1": build_sekil1(nace, cache["alt_c"], ana_c_series=_ana_c),
+        "f2": build_sekil2(nace, cache["sinif_o"], ana_c_series=_ana_c),
+        "f3": build_sekil3(nace, cache["dis_ticaret"]),
+        "f4": build_sekil4(nace, cache["kko"]),
+        "f5": build_sekil5(nace, cache["ufe"]),
+        "f6": build_sekil6(nace, cache["ciro"])    if "ciro"    in cache else {},
+        "f7": build_sekil7(nace, cache["ucretli"]) if "ucretli" in cache else {},
+        "f_fiyat": build_dis_ticaret_fiyat(nace, cache.get("dis_ticaret_fiyat", {})),
+        "f_su":    build_saat_ucret(nace, cache.get("saat_ucret", {})),
+        "f_ydufe": build_ydufe(nace, cache.get("ydufe", [])),
+        "f_tufe":  build_tufe(cache.get("tufe", [])),
+    }
     try:
         from iso_data import sector_iso
-        f8 = sector_iso(nace)
+        out["f8"] = sector_iso(nace)
     except Exception:
-        f8 = None
+        out["f8"] = None
     try:
         from prodtr_data import sector_products
-        f9 = sector_products(nace)
+        out["f9"] = sector_products(nace)
     except Exception:
-        f9 = None
+        out["f9"] = None
+    return out
+
+with st.spinner("Hesaplanıyor…"):
+    _S = compute_sector(nace, cache_date)
+    f1, f2, f3 = _S["f1"], _S["f2"], _S["f3"]
+    f4, f5, f6, f7 = _S["f4"], _S["f5"], _S["f6"], _S["f7"]
+    f_fiyat, f_su, f_ydufe, f_tufe = _S["f_fiyat"], _S["f_su"], _S["f_ydufe"], _S["f_tufe"]
+    f8, f9 = _S["f8"], _S["f9"]
 
 # ── Para birimi türevleri: yıllık ortalama USD/TRY + dönüşüm yardımcıları ──────
 _kur_yil = {}
