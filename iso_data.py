@@ -25,9 +25,10 @@ ISO_CACHE = os.path.join(BASE, 'iso_cache.pkl')
 
 _SRC_DIR = os.path.join(BASE, 'iso_source')
 SOURCES = [
-    (os.path.join(_SRC_DIR, '2024 (3).xlsx'), 'İSO 500',        2024),
-    (os.path.join(_SRC_DIR, '2024 (2).xlsx'), 'İSO İkinci 500', 2024),
-    (os.path.join(_SRC_DIR, '2025.xlsx'),     'İSO 500',        2025),
+    (os.path.join(_SRC_DIR, '2024 (3).xlsx'),       'İSO 500',        2024),
+    (os.path.join(_SRC_DIR, '2024 (2).xlsx'),       'İSO İkinci 500', 2024),
+    (os.path.join(_SRC_DIR, '2025.xlsx'),           'İSO 500',        2025),
+    (os.path.join(_SRC_DIR, '2025_ikinci500.xlsx'), 'İSO İkinci 500', 2025),
 ]
 
 COLS = {

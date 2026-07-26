@@ -53,6 +53,74 @@ def _nace_of(code):
         return None
 
 
+def nace4_of(code):
+    """'13.93.12.00.00' → 'C1393' (4 haneli NACE sınıfı)."""
+    p = str(code).split('.')
+    if len(p) < 2:
+        return None
+    try:
+        d2 = int(p[0])
+        if not (10 <= d2 <= 33):
+            return None
+        return f'C{p[0]}{p[1]}'
+    except Exception:
+        return None
+
+
+def products_by_nace4(nace4, top_n=None):
+    """
+    Belirli bir 4 haneli NACE sınıfına (ör. 'C1393') ait PRODTR ürünlerini döner.
+    Satış değerine göre sıralı: [{kod, tanim, birim, satis_deger, uretim, girisim, seri_*}]
+    """
+    c = _load()
+    desc, data = c['desc'], c['data']
+    sd = data.get('satis_deger', {}); ur = data.get('uretim', {}); gr = data.get('girisim', {})
+    target = str(nace4).upper().strip()
+    rows = []
+    for k, meta in desc.items():
+        if meta.get('duzey') != 'PRODTR':
+            continue
+        if nace4_of(k) != target:
+            continue
+        _, sval = _last_val(sd.get(k, {}))
+        _, uval = _last_val(ur.get(k, {}))
+        _, gval = _last_val(gr.get(k, {}))
+        rows.append({
+            'kod': k, 'tanim': meta.get('tanim', ''), 'birim': meta.get('birim', ''),
+            'satis_deger': sval, 'uretim': uval,
+            'girisim': int(gval) if gval else None,
+            'seri_satis': dict(sorted(sd.get(k, {}).items())),
+            'seri_uretim': dict(sorted(ur.get(k, {}).items())),
+        })
+    rows.sort(key=lambda r: (r['satis_deger'] is None, -(r['satis_deger'] or 0)))
+    return rows[:top_n] if top_n else rows
+
+
+def nace4_list(nace2=None):
+    """
+    PRODTR verisinde bulunan 4 haneli NACE sınıflarını döner.
+    nace2 ('C13') verilirse yalnızca onun altındakiler.
+    Döner: [{kod, urun_sayisi, toplam_satis}]
+    """
+    c = _load()
+    sd = c['data'].get('satis_deger', {})
+    agg = {}
+    for k, meta in c['desc'].items():
+        if meta.get('duzey') != 'PRODTR':
+            continue
+        n4 = nace4_of(k)
+        if not n4:
+            continue
+        if nace2 and nace2 != 'C' and not n4.startswith(nace2):
+            continue
+        a = agg.setdefault(n4, {'kod': n4, 'urun_sayisi': 0, 'toplam_satis': 0.0})
+        a['urun_sayisi'] += 1
+        _, sv = _last_val(sd.get(k, {}))
+        if sv:
+            a['toplam_satis'] += sv
+    return sorted(agg.values(), key=lambda r: -r['toplam_satis'])
+
+
 def build_cache(force=False):
     if os.path.exists(CACHE) and not force:
         return

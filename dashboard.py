@@ -537,7 +537,8 @@ from nace_config import (SECTOR_NAMES, SITC_MAP, ALL_MANUFACTURING,
 from generate_report import (
     build_sekil1, build_sekil2, build_sekil3,
     build_sekil4, build_sekil5, build_sekil6, build_sekil7,
-    build_dis_ticaret_fiyat, build_saat_ucret, build_ydufe, build_tufe
+    build_dis_ticaret_fiyat, build_saat_ucret, build_ydufe, build_tufe,
+    yoy_from_index
 )
 
 cache = load_data()
@@ -1105,7 +1106,7 @@ tabs = st.tabs([
     "🏭  Üretim", "🌍  Dış Ticaret",
     "⚙️  Kapasite", "💰  Maliyet Baskısı", "📈  Ciro", "👥  İstihdam",
     "🏆  İSO 500", "📰  Haber & Risk", "📐  Analist Görünümü",
-    "🧴  Ürün Detayı", "📘  Metodoloji",
+    "🧴  Ürün Detayı", "🎯  NACE 4'lü Detay", "📘  Metodoloji",
 ])
 
 # ── TAB 0: GENEL BAKIŞ ───────────────────────────────────────────────────────────
@@ -3065,8 +3066,146 @@ with tabs[10]:
         st.info("Bu sektör için PRODTR ürün istatistiği bulunamadı "
                 "(veya prodtr_cache.pkl eksik).")
 
-# ── TAB 11: METODOLOJİ ──────────────────────────────────────────────────────────
+# ── TAB 11: NACE 4'LÜ DETAY (sınıf düzeyi + ürün köprüsü) ───────────────────────
 with tabs[11]:
+    sec_title("NACE 4'lü Sınıf Detayı",
+              "4 haneli NACE sınıfı bazında üretim endeksi (TÜİK SDMX API) + o sınıfa ait "
+              "PRODTR ürünleri · sektörün en granüler görünümü")
+    try:
+        from prodtr_data import nace4_list, products_by_nace4, gtip_for_product
+        _n4 = nace4_list(nace if nace != TOTAL_MANUFACTURING else None)
+    except Exception as e:
+        _n4 = []
+        st.warning(f"PRODTR verisi okunamadı: {e}")
+
+    # API'den gelen 4 haneli sınıf endeksleri (SINIF_O)
+    _sinif = cache.get("sinif_o", [])
+    _api_codes = sorted({s['key'].get('ACTIVITY_NACE_REV2', '') for s in _sinif
+                         if len(s['key'].get('ACTIVITY_NACE_REV2', '')) == 5
+                         and (nace == TOTAL_MANUFACTURING
+                              or s['key'].get('ACTIVITY_NACE_REV2', '').startswith(nace))})
+
+    # Seçim listesi: PRODTR + API birleşimi
+    _all4 = sorted({x['kod'] for x in _n4} | set(_api_codes))
+    if not _all4:
+        st.info("Bu sektör için 4 haneli sınıf verisi bulunamadı.")
+    else:
+        _sat = {x['kod']: x for x in _n4}
+        def _lbl(c4):
+            nm = nace_name(c4)
+            info = _sat.get(c4)
+            extra = f" · {info['urun_sayisi']} ürün" if info else ""
+            return f"{c4.lstrip('C')} · {nm[:52]}{extra}"
+        sel4 = st.selectbox("4 haneli NACE sınıfı", _all4,
+                            format_func=_lbl, key="nace4_sel")
+
+        st.markdown(f"""<div class="report" style="padding:.9rem 1.2rem;margin-bottom:.9rem">
+            <b style="font-size:1rem">{nace_name(sel4)}</b><br>
+            <span style="color:{MUTED};font-size:.8rem">NACE {sel4.lstrip('C')} ·
+            Üst sektör: {nace_name(sel4[:3])} ({sel4[:3]})</span></div>""",
+            unsafe_allow_html=True)
+
+        n4a, n4b = st.columns([3, 2], gap="large")
+
+        # ── Sol: API'den sınıf üretim endeksi ──
+        with n4a:
+            chart_head("Üretim Endeksi (Sınıf Düzeyi)", "TÜİK SDMX API · YoY %")
+            cands = [s for s in _sinif
+                     if s['key'].get('ACTIVITY_NACE_REV2') == sel4
+                     and s['key'].get('DEGISIM_TUR') == '1']
+            w = [s for s in cands if s['key'].get('SEASONAL_ADJUST') == 'W']
+            cands = w or cands
+            if cands:
+                best = max(cands, key=lambda x: len(x['data']))
+                yoy = yoy_from_index(best['data'])
+                if yoy:
+                    xs, ys = series_xy(yoy, ay_sayisi)
+                    figN = go.Figure(go.Scatter(
+                        x=xs, y=ys, mode="lines",
+                        line=dict(color=BRAND, width=2.4, shape="spline", smoothing=.7),
+                        fill="tozeroy", fillcolor="rgba(37,99,235,.06)",
+                        hovertemplate="<b>%{y:+.1f}%</b><extra></extra>"))
+                    add_end_labels(figN, [(xs[-1], ys[-1], BRAND, "{:+.1f}%")] if xs else [])
+                    figN.update_layout(**LAYOUT, height=300, showlegend=False)
+                    figN.update_xaxes(dtick=6)
+                    figN.update_yaxes(ticksuffix="%")
+                    figN.add_hline(y=0, line_width=1, line_color="#CBD5E1")
+                    st.plotly_chart(figN, use_container_width=True, config=NOBAR)
+                    ann4 = annual_avg(yoy)
+                    if ann4:
+                        yrs4 = list(ann4.keys())[-6:]
+                        figA = go.Figure(go.Bar(
+                            x=yrs4, y=[ann4[y] for y in yrs4],
+                            marker_color=[BRAND if i == len(yrs4)-1 else "#B7C3D7"
+                                          for i in range(len(yrs4))],
+                            marker_line_width=0, marker=dict(cornerradius=4),
+                            text=[f"{ann4[y]:+.1f}" for y in yrs4],
+                            textposition="outside", cliponaxis=False,
+                            textfont=dict(size=10, family="Inter"),
+                            hovertemplate="%{x}: <b>%{y:+.1f}%</b><extra></extra>"))
+                        figA.update_layout(**LAYOUT, height=210, showlegend=False,
+                                           margin=dict(l=8, r=8, t=20, b=28))
+                        figA.update_yaxes(visible=False)
+                        figA.add_hline(y=0, line_width=1, line_color="#CBD5E1")
+                        st.plotly_chart(figA, use_container_width=True, config=NOBAR)
+                    source("Kaynak: TÜİK — Sanayi Üretim Endeksi, Sınıf (4 haneli NACE) Düzeyi · "
+                           "endeksten hesaplanan yıllık değişim")
+                else:
+                    st.info("Bu sınıf için endeks serisi hesaplanamadı.")
+            else:
+                st.info("Bu sınıf için TÜİK API'de üretim endeksi bulunamadı.")
+
+        # ── Sağ: sınıfa ait PRODTR ürünleri ──
+        with n4b:
+            prods = products_by_nace4(sel4) if _n4 else []
+            chart_head("Sınıfın Ürünleri", f"{len(prods)} PRODTR ürünü · satış, milyar ₺")
+            withval = [p for p in prods if p['satis_deger']][:10][::-1]
+            if withval:
+                figP = go.Figure(go.Bar(
+                    y=[p['tanim'][:38] + ("…" if len(p['tanim']) > 38 else "") for p in withval],
+                    x=[(p['satis_deger'] or 0)/1e9 for p in withval],
+                    orientation="h", marker_color=TEAL, marker_line_width=0,
+                    marker=dict(cornerradius=3),
+                    text=[f"{(p['satis_deger'] or 0)/1e9:,.1f}".replace(",", ".") for p in withval],
+                    textposition="outside", cliponaxis=False,
+                    textfont=dict(size=9.5, family="Inter"),
+                    customdata=[[p['kod'], p['girisim'] or "—"] for p in withval],
+                    hovertemplate="<b>%{y}</b><br>PRODTR %{customdata[0]} · "
+                                  "₺%{x:.2f} mlr · %{customdata[1]} girişim<extra></extra>",
+                    width=0.68))
+                figP.update_layout(**LAYOUT, height=max(300, 30*len(withval)+70),
+                                   showlegend=False, hovermode="closest",
+                                   margin=dict(l=8, r=48, t=8, b=28))
+                figP.update_xaxes(showticklabels=False, showline=False)
+                figP.update_yaxes(showgrid=False, tickfont=dict(size=9, color=INK_SOFT))
+                st.plotly_chart(figP, use_container_width=True, config=NOBAR)
+            elif prods:
+                st.caption("Bu sınıftaki ürünlerin satış değerleri gizli (c) beyan edilmiş.")
+            else:
+                st.caption("Bu sınıf için PRODTR ürünü bulunamadı.")
+
+        # ── Ürün tablosu (GTİP dahil) ──
+        if _n4:
+            prods_all = products_by_nace4(sel4)
+            if prods_all:
+                with st.expander(f"📋 {sel4.lstrip('C')} sınıfının tüm ürünleri ({len(prods_all)}) — GTİP dahil"):
+                    rows4 = []
+                    for p in prods_all:
+                        gt = gtip_for_product(p['kod'])
+                        rows4.append({
+                            "PRODTR": p['kod'], "Ürün": p['tanim'],
+                            "Satış (mlr ₺)": round((p['satis_deger'] or 0)/1e9, 3) if p['satis_deger'] else None,
+                            "Üretim": p['uretim'], "Birim": p['birim'],
+                            "Girişim": p['girisim'], "GTİP sayısı": len(gt),
+                        })
+                    st.dataframe(pd.DataFrame(rows4).set_index("PRODTR"),
+                                 use_container_width=True, height=380)
+
+        source("4 haneli NACE sınıfı, TÜİK SDMX API üretim endeksi ile PRODTR ürün "
+               "istatistiklerini birleştirir (PRODTR kodunun ilk 4 hanesi = NACE sınıfı).")
+
+# ── TAB 12: METODOLOJİ ──────────────────────────────────────────────────────────
+with tabs[12]:
     sec_title("Metodoloji & Veri Kaynakları",
               "Dashboard'ta kullanılan tüm veri kaynakları, hesaplama yöntemleri ve türev göstergeler")
 
