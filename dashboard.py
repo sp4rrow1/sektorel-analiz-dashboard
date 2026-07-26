@@ -544,6 +544,7 @@ from generate_report import (
 cache = load_data()
 cache_date = cache.get("meta", {}).get("created_at", "bilinmiyor")[:10]
 NACE_NAMES = cache.get("nace_names", {})
+_ana_c = cache.get("ana_c")   # modül seviyesi — cache'li fonksiyonlar closure ile kullanır
 
 # ─── YARDIMCILAR ─────────────────────────────────────────────────────────────────
 TR_MONTHS = ["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"]
