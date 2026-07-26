@@ -11,13 +11,21 @@ from nace_config import ALL_MANUFACTURING, get_kko_code
 # Onbellek yenileme (bu script) icin gerekli anahtarlar; ortam degiskeninden okunur.
 # Deploy edilen dashboard.py bu dosyayi CALISTIRMAZ (sadece hazir data_cache.pkl'yi
 # okur) -> bu anahtarlar canli sistemde kullanilmaz, sadece yerel yenileme icindir.
-TUIK_KEY  = os.environ.get("TUIK_API_KEY", "")
-EVDS_KEY  = os.environ.get("EVDS_API_KEY", "")
+def _tuik_key():
+    return os.environ.get("TUIK_API_KEY", "").strip()
+
+def _evds_key():
+    return os.environ.get("EVDS_API_KEY", "").strip()
+
+# Geriye dönük uyumluluk (bazı fetch fonksiyonları modül sabitini kullanıyor)
+TUIK_KEY  = _tuik_key()
+EVDS_KEY  = _evds_key()
 BASE_URL  = "https://nsiws.tuik.gov.tr/rest"
 TOKEN_URL = "https://giris.tuik.gov.tr/realms/web/protocol/openid-connect/token"
 EVDS_BASE = "https://evds3.tcmb.gov.tr/igmevdsms-dis"
 START     = "2015-01"
-END       = "2026-06"
+# END dinamik: içinde bulunulan ay (TÜİK yayınladıkça yeni dönemler otomatik gelir)
+END       = datetime.now().strftime("%Y-%m")
 CACHE_FILE = os.path.join(os.path.dirname(__file__), "data_cache.pkl")
 
 _token = None
@@ -29,7 +37,7 @@ def get_token():
     if _token and _expiry and datetime.now() < _expiry:
         return _token
     data = urllib.parse.urlencode({
-        "grant_type": "password", "client_id": "nsi-ws-consumer", "api_key": TUIK_KEY
+        "grant_type": "password", "client_id": "nsi-ws-consumer", "api_key": _tuik_key()
     }).encode()
     req = urllib.request.Request(TOKEN_URL, data=data,
           headers={"Content-Type": "application/x-www-form-urlencoded"})
@@ -50,7 +58,7 @@ def fetch_tuik(url, retries=3):
             time.sleep(5)
 
 def fetch_evds(path):
-    req = urllib.request.Request(f"{EVDS_BASE}/{path}", headers={"key": EVDS_KEY})
+    req = urllib.request.Request(f"{EVDS_BASE}/{path}", headers={"key": _evds_key()})
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read().decode("utf-8", "replace"))
 
@@ -299,7 +307,7 @@ def fetch_usdtry():
     """Aylik USD/TRY: EVDS anahtari varsa aylik ortalama, yoksa TCMB kur
     arsivinden ayin ortasindaki ilk gecerli is gunu satis kuru (2005-01+)."""
     print("[12] USD/TRY kuru...")
-    if EVDS_KEY:
+    if _evds_key():
         try:
             url = ("series=TP.DK.USD.S.YTL&startDate=01-01-2005&endDate=01-06-2030"
                    "&type=json&frequency=5&aggregationTypes=avg")
@@ -340,54 +348,100 @@ def fetch_usdtry():
     print(f"      TCMB arsivi: {len(out)} ay")
     return out
 
-    t0 = datetime.now()
 
+# ─── VERİ SETİ TANIMLARI (sıra + fetch fonksiyonu) ────────────────────────────
+FETCH_STEPS = [
+    ('alt_c',            fetch_alt_c),
+    ('ana_c',            fetch_ana_c),
+    ('sinif_o',          fetch_sinif_o),
+    ('ufe',              fetch_ufe),
+    ('dis_ticaret',      fetch_dis_ticaret),
+    ('kko',              fetch_kko),
+    ('ciro',             fetch_ciro),
+    ('ucretli',          fetch_ucretli),
+    ('redk',             fetch_redk),
+    ('iya',              fetch_iya),
+    ('dis_ticaret_fiyat', fetch_dis_ticaret_fiyat),
+    ('saat_ucret',       fetch_saat_ucret),
+    ('ydufe',            fetch_ydufe),
+    ('tufe',             fetch_tufe),
+    ('usdtry',           fetch_usdtry),
+]
+
+
+def latest_period(cache):
+    """Cache'teki en güncel aylık dönemi (YYYY-MM) döndürür — veri güncelliği göstergesi."""
+    best = ''
+    for key in ('alt_c', 'ana_c', 'ufe'):
+        for s in cache.get(key, []) or []:
+            if isinstance(s, dict) and 'data' in s:
+                for p in s['data']:
+                    if len(str(p)) == 7 and str(p) > best:
+                        best = str(p)
+    return best or None
+
+
+def refresh_all_data(progress_cb=None):
+    """
+    Tüm veri setlerini API'lerden TAZE çeker, data_cache.pkl'yi güncelin end tarihiyle
+    yeniden yazar. Mevcut (yeniden çekilmeyen) anahtarları korur (ör. nace_names).
+    progress_cb(i, n, key) verilirse her adımda çağrılır (UI ilerleme çubuğu için).
+    Döner: {'ok': [...], 'fail': [...], 'created_at', 'end', 'latest', 'elapsed', 'size_mb'}
+    """
+    if not _tuik_key():
+        raise RuntimeError("TUIK_API_KEY tanımlı değil — taze veri çekilemez.")
+
+    t0 = datetime.now()
     cache = {}
     if os.path.exists(CACHE_FILE):
         try:
             with open(CACHE_FILE, 'rb') as f:
                 cache = pickle.load(f)
-            print("Mevcut cache yüklendi. Hatalı sorgularda eski veri korunacak.")
-        except Exception as e:
-            print(f"Eski cache okunamadı: {e}")
+        except Exception:
+            cache = {}
 
-    def safe_run(key, func):
+    ok, fail = [], []
+    n = len(FETCH_STEPS)
+    for i, (key, func) in enumerate(FETCH_STEPS):
+        if progress_cb:
+            try: progress_cb(i, n, key)
+            except Exception: pass
         try:
             res = func()
             if res:
                 cache[key] = res
+                ok.append(key)
+            else:
+                fail.append(key)
         except Exception as e:
-            print(f"   [HATA] {key} güncellenemedi: {e}")
+            print(f"   [HATA] {key}: {e}")
+            fail.append(key)
 
-    safe_run('alt_c', fetch_alt_c)
-    safe_run('ana_c', fetch_ana_c)
-    safe_run('sinif_o', fetch_sinif_o)
-    safe_run('ufe', fetch_ufe)
-    safe_run('dis_ticaret', fetch_dis_ticaret)
-    safe_run('kko', fetch_kko)
-    safe_run('ciro', fetch_ciro)
-    safe_run('ucretli', fetch_ucretli)
-    safe_run('redk', fetch_redk)
-    safe_run('iya', fetch_iya)
-    safe_run('dis_ticaret_fiyat', fetch_dis_ticaret_fiyat)
-    safe_run('saat_ucret', fetch_saat_ucret)
-    safe_run('ydufe', fetch_ydufe)
-    safe_run('tufe', fetch_tufe)
-    safe_run('usdtry', fetch_usdtry)
-
-    cache['meta']        = {
+    cache['meta'] = {
         'created_at': datetime.now().isoformat(),
         'start':      START,
         'end':        END,
         'nace_codes': ALL_MANUFACTURING,
     }
-
     with open(CACHE_FILE, 'wb') as f:
         pickle.dump(cache, f)
 
-    elapsed = (datetime.now() - t0).seconds
-    size_mb = os.path.getsize(CACHE_FILE) / 1024 / 1024
-    print(f"\nOnbellek kaydedildi: {CACHE_FILE}")
-    print(f"Boyut: {size_mb:.1f} MB | Sure: {elapsed}s")
-    print(f"Toplam seri: alt_c={len(cache['alt_c'])}, "
-          f"sinif_o={len(cache['sinif_o'])}, ufe={len(cache['ufe'])}")
+    return {
+        'ok': ok, 'fail': fail,
+        'created_at': cache['meta']['created_at'],
+        'end': END,
+        'latest': latest_period(cache),
+        'elapsed': (datetime.now() - t0).seconds,
+        'size_mb': os.path.getsize(CACHE_FILE) / 1024 / 1024,
+    }
+
+
+if __name__ == "__main__":
+    print("=" * 60)
+    print(f"TÜİK + TCMB — Tüm veri yenileniyor (dönem: {START} → {END})")
+    print("=" * 60)
+    r = refresh_all_data(lambda i, n, k: print(f"[{i+1}/{n}] {k} ..."))
+    print(f"\nBitti — başarılı: {len(r['ok'])}, hatalı: {len(r['fail'])} "
+          f"({', '.join(r['fail']) if r['fail'] else 'yok'})")
+    print(f"En güncel dönem: {r['latest']} | Süre: {r['elapsed']}s | "
+          f"Boyut: {r['size_mb']:.1f} MB")

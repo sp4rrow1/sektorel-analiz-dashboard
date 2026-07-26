@@ -834,16 +834,64 @@ with st.sidebar:
 
     # ── Veri & önbellek ───────────────────────────────────────────────────────
     st.markdown('<div class="side-label">🗂️ Veri</div>', unsafe_allow_html=True)
+    try:
+        from cache_all import latest_period as _latest_period
+        _son_donem = _latest_period(cache) or "—"
+    except Exception:
+        _son_donem = "—"
+    # API anahtarı env veya Streamlit secrets'ta mı?
+    def _has_data_keys():
+        if os.environ.get("TUIK_API_KEY", "").strip():
+            return True
+        try:
+            return bool(str(st.secrets.get("TUIK_API_KEY", "")).strip())
+        except Exception:
+            return False
+    _keys_ok = _has_data_keys()
     st.markdown(f"""
     <div class="side-card">
-      <div class="side-meta-row"><span>Güncelleme</span><b>{cache_date}</b></div>
-      <div class="side-meta-row"><span>Kapsam</span><b>C10–C33</b></div>
-      <div class="side-meta-row"><span>Kaynaklar</span>
-        <span class="side-pill">9 set</span></div>
+      <div class="side-meta-row"><span>Son çekim</span><b>{cache_date}</b></div>
+      <div class="side-meta-row"><span>En güncel dönem</span><b>{_son_donem}</b></div>
+      <div class="side-meta-row"><span>Kapsam</span><b>C10–C33 · 9 set</b></div>
     </div>""", unsafe_allow_html=True)
-    if st.button("🔄 Önbelleği Yenile", use_container_width=True):
-        st.cache_resource.clear()
-        st.rerun()
+
+    if st.button("🔄 Verileri Güncelle", use_container_width=True,
+                 help="TÜİK/TCMB API'lerinden en güncel dönemleri çeker ve önbelleği yeniden yazar"):
+        if not _keys_ok:
+            st.warning("Veri çekmek için API anahtarı gerekli. Streamlit Secrets'a "
+                       "`TUIK_API_KEY` (ve `EVDS_API_KEY`) ekleyin. Önbellek yalnızca temizlendi.")
+            st.cache_resource.clear(); st.cache_data.clear()
+            st.rerun()
+        else:
+            # Anahtarları secrets → ortam değişkenine aktar
+            for k in ("TUIK_API_KEY", "EVDS_API_KEY"):
+                if not os.environ.get(k, "").strip():
+                    try:
+                        v = str(st.secrets.get(k, "")).strip()
+                        if v: os.environ[k] = v
+                    except Exception:
+                        pass
+            try:
+                from cache_all import refresh_all_data, FETCH_STEPS
+                with st.status("TÜİK/TCMB'den taze veri çekiliyor…", expanded=True) as _stt:
+                    _bar = st.progress(0.0)
+                    def _cb(i, n, key):
+                        _stt.update(label=f"Çekiliyor: {key} ({i+1}/{n})")
+                        _bar.progress((i) / n)
+                    res = refresh_all_data(progress_cb=_cb)
+                    _bar.progress(1.0)
+                    _stt.update(label=f"Güncellendi ✓ · en güncel dönem: {res['latest']}",
+                                state="complete")
+                st.session_state["_refresh_msg"] = (
+                    f"✓ {len(res['ok'])} veri seti güncellendi (en güncel dönem: {res['latest']})"
+                    + (f" · {len(res['fail'])} hata: {', '.join(res['fail'])}" if res['fail'] else ""))
+                st.cache_resource.clear(); st.cache_data.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Güncelleme başarısız: {e}")
+
+    if st.session_state.get("_refresh_msg"):
+        st.caption(st.session_state.pop("_refresh_msg"))
 
     # LLM durumu: kendi anahtar mı, ücretsiz havuz mu?
     try:

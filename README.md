@@ -23,13 +23,25 @@ streamlit run dashboard.py
 `data_cache.pkl` ve `iso_cache.pkl` repo ile birlikte gelir — ilk çalıştırmada
 ekstra kurulum gerekmez.
 
-## Veriyi yenilemek (opsiyonel, yerel)
+## Veriyi yenilemek
 
-```bash
-set TUIK_API_KEY=...
-set EVDS_API_KEY=...
-python cache_all.py
-```
+Dashboard'daki **"🔄 Verileri Güncelle"** butonu TÜİK/TCMB API'lerinden en güncel
+dönemleri çeker ve önbelleği yeniden yazar. Bunun için API anahtarı gerekir:
+
+- **Yerel**: ortam değişkeni
+  ```bash
+  set TUIK_API_KEY=...
+  set EVDS_API_KEY=...
+  ```
+- **Streamlit Cloud**: Settings → Secrets
+  ```toml
+  TUIK_API_KEY = "..."
+  EVDS_API_KEY = "..."
+  ```
+
+Anahtar yoksa buton yalnızca önbelleği temizler (repo ile gelen hazır veri kullanılır).
+Komut satırından tam yenileme: `python cache_all.py`. Kapsanan dönem otomatik olarak
+içinde bulunulan aya kadar genişler.
 
 ## Güvenilir LLM (opsiyonel)
 
